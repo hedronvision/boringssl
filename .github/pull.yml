@@ -2,4 +2,6 @@ version: "1"
 rules:
   - base: master
     upstream: google:master-with-bazel
-    mergeMethod: hardreset
+    mergeMethod: merge
+    assignees:
+      - cpsauer
