@@ -279,7 +279,6 @@ crypto_sources = [
     "src/crypto/asn1/a_mbstr.c",
     "src/crypto/asn1/a_object.c",
     "src/crypto/asn1/a_octet.c",
-    "src/crypto/asn1/a_print.c",
     "src/crypto/asn1/a_strex.c",
     "src/crypto/asn1/a_strnid.c",
     "src/crypto/asn1/a_time.c",
