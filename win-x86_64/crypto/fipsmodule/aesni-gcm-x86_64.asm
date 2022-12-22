@@ -305,6 +305,9 @@ $L$enc_tail:
 	vpaddb	xmm0,xmm1,xmm2
 	mov	QWORD[((112+8))+rsp],r13
 	lea	rdi,[96+rdi]
+
+	prefetcht0	[512+rdi]
+	prefetcht0	[576+rdi]
 	vaesenclast	xmm11,xmm11,xmm5
 	vpaddb	xmm5,xmm0,xmm2
 	mov	QWORD[((120+8))+rsp],r12
