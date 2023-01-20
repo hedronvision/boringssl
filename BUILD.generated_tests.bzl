@@ -282,6 +282,8 @@ crypto_test_data = [
     "src/crypto/x509/test/policy_leaf_require.pem",
     "src/crypto/x509/test/policy_leaf_require1.pem",
     "src/crypto/x509/test/policy_root.pem",
+    "src/crypto/x509/test/policy_root2.pem",
+    "src/crypto/x509/test/policy_root_cross_inhibit_mapping.pem",
     "src/crypto/x509/test/pss_sha1.pem",
     "src/crypto/x509/test/pss_sha1_explicit.pem",
     "src/crypto/x509/test/pss_sha1_mgf1_syntax_error.pem",
