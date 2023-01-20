@@ -519,6 +519,7 @@ add_library(
   src/crypto/x509/by_file.c
   src/crypto/x509/i2d_pr.c
   src/crypto/x509/name_print.c
+  src/crypto/x509/policy.c
   src/crypto/x509/rsa_pss.c
   src/crypto/x509/t_crl.c
   src/crypto/x509/t_req.c
@@ -558,11 +559,6 @@ add_library(
   src/crypto/x509/x_val.c
   src/crypto/x509/x_x509.c
   src/crypto/x509/x_x509a.c
-  src/crypto/x509v3/pcy_cache.c
-  src/crypto/x509v3/pcy_data.c
-  src/crypto/x509v3/pcy_map.c
-  src/crypto/x509v3/pcy_node.c
-  src/crypto/x509v3/pcy_tree.c
   src/crypto/x509v3/v3_akey.c
   src/crypto/x509v3/v3_akeya.c
   src/crypto/x509v3/v3_alt.c
