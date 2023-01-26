@@ -293,7 +293,6 @@ set(
   linux-x86_64/crypto/fipsmodule/x86_64-mont.S
   linux-x86_64/crypto/fipsmodule/x86_64-mont5.S
   linux-x86_64/crypto/test/trampoline-x86_64.S
-  src/crypto/hrss/asm/poly_rq_mul.S
 )
 
 set(
