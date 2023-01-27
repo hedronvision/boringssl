@@ -92,8 +92,6 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm*")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "mips")
   # Just to avoid the “unknown processor” error.
   set(ARCH "generic")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
-  set(ARCH "ppc64le")
 else()
   message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
 endif()
@@ -243,14 +241,6 @@ set(
   linux-arm/crypto/test/trampoline-armv4-linux.S
   src/crypto/curve25519/asm/x25519-asm-arm.S
   src/crypto/poly1305/poly1305_arm_asm.S
-)
-
-set(
-  CRYPTO_linux_ppc64le_SOURCES
-
-  linux-ppc64le/crypto/fipsmodule/aesp8-ppc-linux.S
-  linux-ppc64le/crypto/fipsmodule/ghashp8-ppc-linux.S
-  linux-ppc64le/crypto/test/trampoline-ppc-linux.S
 )
 
 set(
@@ -438,7 +428,6 @@ add_library(
   src/crypto/cpu_arm_freebsd.c
   src/crypto/cpu_arm_linux.c
   src/crypto/cpu_intel.c
-  src/crypto/cpu_ppc64le.c
   src/crypto/crypto.c
   src/crypto/curve25519/curve25519.c
   src/crypto/curve25519/spake25519.c

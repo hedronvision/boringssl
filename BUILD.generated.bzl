@@ -80,7 +80,6 @@ fips_fragments = [
     "src/crypto/fipsmodule/self_check/fips.c",
     "src/crypto/fipsmodule/self_check/self_check.c",
     "src/crypto/fipsmodule/service_indicator/service_indicator.c",
-    "src/crypto/fipsmodule/sha/sha1-altivec.c",
     "src/crypto/fipsmodule/sha/sha1.c",
     "src/crypto/fipsmodule/sha/sha256.c",
     "src/crypto/fipsmodule/sha/sha512.c",
@@ -339,7 +338,6 @@ crypto_sources = [
     "src/crypto/cpu_arm_freebsd.c",
     "src/crypto/cpu_arm_linux.c",
     "src/crypto/cpu_intel.c",
-    "src/crypto/cpu_ppc64le.c",
     "src/crypto/crypto.c",
     "src/crypto/curve25519/curve25519.c",
     "src/crypto/curve25519/spake25519.c",
@@ -621,12 +619,6 @@ crypto_sources_linux_arm = [
     "linux-arm/crypto/test/trampoline-armv4-linux.S",
     "src/crypto/curve25519/asm/x25519-asm-arm.S",
     "src/crypto/poly1305/poly1305_arm_asm.S",
-]
-
-crypto_sources_linux_ppc64le = [
-    "linux-ppc64le/crypto/fipsmodule/aesp8-ppc-linux.S",
-    "linux-ppc64le/crypto/fipsmodule/ghashp8-ppc-linux.S",
-    "linux-ppc64le/crypto/test/trampoline-ppc-linux.S",
 ]
 
 crypto_sources_linux_x86 = [
