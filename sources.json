@@ -929,6 +929,7 @@
     "src/fuzz/bn_mod_exp.cc", 
     "src/fuzz/cert.cc", 
     "src/fuzz/client.cc", 
+    "src/fuzz/conf.cc", 
     "src/fuzz/decode_client_hello_inner.cc", 
     "src/fuzz/der_roundtrip.cc", 
     "src/fuzz/dtls_client.cc", 
