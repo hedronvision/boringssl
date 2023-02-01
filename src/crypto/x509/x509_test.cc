@@ -5716,6 +5716,10 @@ TEST(X509Test, ExtensionFromConf) {
       // If no config is provided, this should fail.
       {"basicConstraints", "critical,@section", nullptr, {}},
 
+      // issuingDistributionPoint takes a list of name:value pairs. Omitting the
+      // value is not allowed.
+      {"issuingDistributionPoint", "fullname", nullptr, {}},
+
       // The "DER:" prefix just specifies an arbitrary byte string. Colons
       // separators are ignored.
       {kTestOID, "DER:0001020304", nullptr, {0x30, 0x15, 0x06, 0x0c, 0x2a, 0x86,
@@ -6204,4 +6208,15 @@ key = FORMAT:HEX,OCTWRAP,OCT:9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703
       EXPECT_EQ(Bytes(t.expected), Bytes(der, len));
     }
   }
+}
+
+TEST(X509Test, AddUnserializableExtension) {
+  bssl::UniquePtr<EVP_PKEY> key = PrivateKeyFromPEM(kP256Key);
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<X509> x509 =
+      MakeTestCert("Issuer", "Subject", key.get(), /*is_ca=*/true);
+  ASSERT_TRUE(x509);
+  bssl::UniquePtr<X509_EXTENSION> ext(X509_EXTENSION_new());
+  ASSERT_TRUE(X509_EXTENSION_set_object(ext.get(), OBJ_nid2obj(NID_undef)));
+  EXPECT_FALSE(X509_add_ext(x509.get(), ext.get(), /*loc=*/-1));
 }

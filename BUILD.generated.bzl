@@ -713,3 +713,18 @@ crypto_sources_win_x86_64 = [
     "win-x86_64/crypto/fipsmodule/x86_64-mont5-win.asm",
     "win-x86_64/crypto/test/trampoline-x86_64-win.asm",
 ]
+
+crypto_sources_asm = []
+crypto_sources_asm.extend(crypto_sources_apple_arm)
+crypto_sources_asm.extend(crypto_sources_apple_aarch64)
+crypto_sources_asm.extend(crypto_sources_apple_x86)
+crypto_sources_asm.extend(crypto_sources_apple_x86_64)
+crypto_sources_asm.extend(crypto_sources_linux_arm)
+crypto_sources_asm.extend(crypto_sources_linux_aarch64)
+crypto_sources_asm.extend(crypto_sources_linux_x86)
+crypto_sources_asm.extend(crypto_sources_linux_x86_64)
+crypto_sources_asm.extend(crypto_sources_win_aarch64)
+
+crypto_sources_nasm = []
+crypto_sources_nasm.extend(crypto_sources_win_x86)
+crypto_sources_nasm.extend(crypto_sources_win_x86_64)

@@ -14,21 +14,21 @@
 
 # This file is created by generate_build_files.py. Do not edit manually.
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 
 project(BoringSSL LANGUAGES C CXX)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  set(CLANG 1)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fno-common -fno-exceptions -fno-rtti")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden -fno-common")
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -fvisibility=hidden -fno-common -fno-exceptions -fno-rtti")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden -fno-common -std=c11")
-endif()
-
-# pthread_rwlock_t requires a feature flag.
-if(NOT WIN32)
+# pthread_rwlock_t requires a feature flag on glibc.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_XOPEN_SOURCE=700")
 endif()
 
@@ -38,73 +38,19 @@ if(WIN32)
   add_definitions(-DNOMINMAX)
   # Allow use of fopen.
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-  # VS 2017 and higher supports STL-only warning suppressions.
-  # A bug in CMake < 3.13.0 may cause the space in this value to
-  # cause issues when building with NASM. In that case, update CMake.
-  add_definitions("-D_STL_EXTRA_DISABLED_WARNINGS=4774 4987")
 endif()
 
 add_definitions(-DBORINGSSL_IMPLEMENTATION)
 
-# CMake's iOS support uses Apple's multiple-architecture toolchain. It takes an
-# architecture list from CMAKE_OSX_ARCHITECTURES, leaves CMAKE_SYSTEM_PROCESSOR
-# alone, and expects all architecture-specific logic to be conditioned within
-# the source files rather than the build. This does not work for our assembly
-# files, so we fix CMAKE_SYSTEM_PROCESSOR and only support single-architecture
-# builds.
-if(NOT OPENSSL_NO_ASM AND CMAKE_OSX_ARCHITECTURES)
-  list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHES)
-  if(NOT NUM_ARCHES EQUAL 1)
-    message(FATAL_ERROR "Universal binaries not supported.")
-  endif()
-  list(GET CMAKE_OSX_ARCHITECTURES 0 CMAKE_SYSTEM_PROCESSOR)
-endif()
-
-if(OPENSSL_NO_ASM)
-  add_definitions(-DOPENSSL_NO_ASM)
-  set(ARCH "generic")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
-  set(ARCH "x86_64")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
-  set(ARCH "x86_64")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
-  # cmake reports AMD64 on Windows, but we might be building for 32-bit.
-  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(ARCH "x86_64")
-  else()
-    set(ARCH "x86")
-  endif()
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
-  set(ARCH "x86")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "i386")
-  set(ARCH "x86")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "i686")
-  set(ARCH "x86")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-  set(ARCH "aarch64")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-  set(ARCH "aarch64")
-# Apple A12 Bionic chipset which is added in iPhone XS/XS Max/XR uses arm64e architecture.
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64e")
-  set(ARCH "aarch64")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm*")
-  set(ARCH "arm")
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "mips")
-  # Just to avoid the “unknown processor” error.
-  set(ARCH "generic")
-else()
-  message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
-endif()
-
 if(NOT OPENSSL_NO_ASM)
-  if(UNIX)
+  # On x86 and x86_64 Windows, we use the NASM output.
+  if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64|amd64|x86|i[3-6]86")
+    enable_language(ASM_NASM)
+    set(OPENSSL_NASM TRUE)
+    set(CMAKE_ASM_NASM_FLAGS "${CMAKE_ASM_NASM_FLAGS} -gcv8")
+  else()
     enable_language(ASM)
-
-    # Clang's integerated assembler does not support debug symbols.
-    if(NOT CMAKE_ASM_COMPILER_ID MATCHES "Clang")
-      set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -Wa,-g")
-    endif()
-
+    set(OPENSSL_ASM TRUE)
     # CMake does not add -isysroot and -arch flags to assembly.
     if(APPLE)
       if(CMAKE_OSX_SYSROOT)
@@ -114,9 +60,13 @@ if(NOT OPENSSL_NO_ASM)
         set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -arch ${arch}")
       endforeach()
     endif()
-  else()
-    set(CMAKE_ASM_NASM_FLAGS "${CMAKE_ASM_NASM_FLAGS} -gcv8")
-    enable_language(ASM_NASM)
+    if(NOT WIN32)
+      set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -Wa,--noexecstack")
+    endif()
+    # Clang's integerated assembler does not support debug symbols.
+    if(NOT CMAKE_ASM_COMPILER_ID MATCHES "Clang")
+      set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -Wa,-g")
+    endif()
   endif()
 endif()
 
@@ -130,7 +80,7 @@ endif()
 include_directories(src/include)
 
 set(
-  CRYPTO_apple_aarch64_SOURCES
+  CRYPTO_SOURCES_ASM
 
   apple-aarch64/crypto/chacha/chacha-armv8-apple.S
   apple-aarch64/crypto/cipher_extra/chacha20_poly1305_armv8-apple.S
@@ -146,11 +96,6 @@ set(
   apple-aarch64/crypto/fipsmodule/sha512-armv8-apple.S
   apple-aarch64/crypto/fipsmodule/vpaes-armv8-apple.S
   apple-aarch64/crypto/test/trampoline-armv8-apple.S
-)
-
-set(
-  CRYPTO_apple_arm_SOURCES
-
   apple-arm/crypto/chacha/chacha-armv4-apple.S
   apple-arm/crypto/fipsmodule/aesv8-armv7-apple.S
   apple-arm/crypto/fipsmodule/armv4-mont-apple.S
@@ -162,11 +107,6 @@ set(
   apple-arm/crypto/fipsmodule/sha512-armv4-apple.S
   apple-arm/crypto/fipsmodule/vpaes-armv7-apple.S
   apple-arm/crypto/test/trampoline-armv4-apple.S
-)
-
-set(
-  CRYPTO_apple_x86_SOURCES
-
   apple-x86/crypto/chacha/chacha-x86-apple.S
   apple-x86/crypto/fipsmodule/aesni-x86-apple.S
   apple-x86/crypto/fipsmodule/bn-586-apple.S
@@ -180,11 +120,6 @@ set(
   apple-x86/crypto/fipsmodule/vpaes-x86-apple.S
   apple-x86/crypto/fipsmodule/x86-mont-apple.S
   apple-x86/crypto/test/trampoline-x86-apple.S
-)
-
-set(
-  CRYPTO_apple_x86_64_SOURCES
-
   apple-x86_64/crypto/chacha/chacha-x86_64-apple.S
   apple-x86_64/crypto/cipher_extra/aes128gcmsiv-x86_64-apple.S
   apple-x86_64/crypto/cipher_extra/chacha20_poly1305_x86_64-apple.S
@@ -204,11 +139,6 @@ set(
   apple-x86_64/crypto/fipsmodule/x86_64-mont-apple.S
   apple-x86_64/crypto/fipsmodule/x86_64-mont5-apple.S
   apple-x86_64/crypto/test/trampoline-x86_64-apple.S
-)
-
-set(
-  CRYPTO_linux_aarch64_SOURCES
-
   linux-aarch64/crypto/chacha/chacha-armv8-linux.S
   linux-aarch64/crypto/cipher_extra/chacha20_poly1305_armv8-linux.S
   linux-aarch64/crypto/fipsmodule/aesv8-armv8-linux.S
@@ -223,11 +153,6 @@ set(
   linux-aarch64/crypto/fipsmodule/sha512-armv8-linux.S
   linux-aarch64/crypto/fipsmodule/vpaes-armv8-linux.S
   linux-aarch64/crypto/test/trampoline-armv8-linux.S
-)
-
-set(
-  CRYPTO_linux_arm_SOURCES
-
   linux-arm/crypto/chacha/chacha-armv4-linux.S
   linux-arm/crypto/fipsmodule/aesv8-armv7-linux.S
   linux-arm/crypto/fipsmodule/armv4-mont-linux.S
@@ -239,13 +164,6 @@ set(
   linux-arm/crypto/fipsmodule/sha512-armv4-linux.S
   linux-arm/crypto/fipsmodule/vpaes-armv7-linux.S
   linux-arm/crypto/test/trampoline-armv4-linux.S
-  src/crypto/curve25519/asm/x25519-asm-arm.S
-  src/crypto/poly1305/poly1305_arm_asm.S
-)
-
-set(
-  CRYPTO_linux_x86_SOURCES
-
   linux-x86/crypto/chacha/chacha-x86-linux.S
   linux-x86/crypto/fipsmodule/aesni-x86-linux.S
   linux-x86/crypto/fipsmodule/bn-586-linux.S
@@ -259,11 +177,6 @@ set(
   linux-x86/crypto/fipsmodule/vpaes-x86-linux.S
   linux-x86/crypto/fipsmodule/x86-mont-linux.S
   linux-x86/crypto/test/trampoline-x86-linux.S
-)
-
-set(
-  CRYPTO_linux_x86_64_SOURCES
-
   linux-x86_64/crypto/chacha/chacha-x86_64-linux.S
   linux-x86_64/crypto/cipher_extra/aes128gcmsiv-x86_64-linux.S
   linux-x86_64/crypto/cipher_extra/chacha20_poly1305_x86_64-linux.S
@@ -283,11 +196,8 @@ set(
   linux-x86_64/crypto/fipsmodule/x86_64-mont-linux.S
   linux-x86_64/crypto/fipsmodule/x86_64-mont5-linux.S
   linux-x86_64/crypto/test/trampoline-x86_64-linux.S
-)
-
-set(
-  CRYPTO_win_aarch64_SOURCES
-
+  src/crypto/curve25519/asm/x25519-asm-arm.S
+  src/crypto/poly1305/poly1305_arm_asm.S
   win-aarch64/crypto/chacha/chacha-armv8-win.S
   win-aarch64/crypto/cipher_extra/chacha20_poly1305_armv8-win.S
   win-aarch64/crypto/fipsmodule/aesv8-armv8-win.S
@@ -305,7 +215,7 @@ set(
 )
 
 set(
-  CRYPTO_win_x86_SOURCES
+  CRYPTO_SOURCES_NASM
 
   win-x86/crypto/chacha/chacha-x86-win.asm
   win-x86/crypto/fipsmodule/aesni-x86-win.asm
@@ -320,11 +230,6 @@ set(
   win-x86/crypto/fipsmodule/vpaes-x86-win.asm
   win-x86/crypto/fipsmodule/x86-mont-win.asm
   win-x86/crypto/test/trampoline-x86-win.asm
-)
-
-set(
-  CRYPTO_win_x86_64_SOURCES
-
   win-x86_64/crypto/chacha/chacha-x86_64-win.asm
   win-x86_64/crypto/cipher_extra/aes128gcmsiv-x86_64-win.asm
   win-x86_64/crypto/cipher_extra/chacha20_poly1305_x86_64-win.asm
@@ -346,18 +251,17 @@ set(
   win-x86_64/crypto/test/trampoline-x86_64-win.asm
 )
 
-if(APPLE)
-  set(CRYPTO_ARCH_SOURCES ${CRYPTO_apple_${ARCH}_SOURCES})
-elseif(UNIX)
-  set(CRYPTO_ARCH_SOURCES ${CRYPTO_linux_${ARCH}_SOURCES})
-elseif(WIN32)
-  set(CRYPTO_ARCH_SOURCES ${CRYPTO_win_${ARCH}_SOURCES})
+if(OPENSSL_ASM)
+  list(APPEND CRYPTO_SOURCES_ASM_USED ${CRYPTO_SOURCES_ASM})
+endif()
+if(OPENSSL_NASM)
+  list(APPEND CRYPTO_SOURCES_ASM_USED ${CRYPTO_SOURCES_NASM})
 endif()
 
 add_library(
   crypto
 
-  ${CRYPTO_ARCH_SOURCES}
+  ${CRYPTO_SOURCES_ASM_USED}
   err_data.c
   src/crypto/asn1/a_bitstr.c
   src/crypto/asn1/a_bool.c
@@ -650,8 +554,9 @@ add_executable(
 
 target_link_libraries(bssl ssl crypto)
 
-if(NOT WIN32 AND NOT ANDROID)
-  target_link_libraries(crypto pthread)
+if(NOT ANDROID)
+  find_package(Threads REQUIRED)
+  target_link_libraries(crypto Threads::Threads)
 endif()
 
 if(WIN32)
