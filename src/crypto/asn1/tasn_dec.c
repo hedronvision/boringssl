@@ -161,7 +161,6 @@ static int asn1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in,
                             long len, const ASN1_ITEM *it, int tag, int aclass,
                             char opt, int depth) {
   const ASN1_TEMPLATE *tt, *errtt = NULL;
-  const ASN1_EXTERN_FUNCS *ef;
   const unsigned char *p = NULL, *q;
   unsigned char oclass;
   char cst, isopt;
@@ -169,8 +168,6 @@ static int asn1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in,
   int otag;
   int ret = 0;
   ASN1_VALUE **pchptr;
-  int combine = aclass & ASN1_TFLG_COMBINE;
-  aclass &= ~ASN1_TFLG_COMBINE;
   if (!pval) {
     return 0;
   }
@@ -238,10 +235,15 @@ static int asn1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in,
       }
       return asn1_d2i_ex_primitive(pval, in, len, it, otag, 0, 0);
 
-    case ASN1_ITYPE_EXTERN:
-      // Use new style d2i
-      ef = it->funcs;
-      return ef->asn1_ex_d2i(pval, in, len, it, tag, aclass, opt, NULL);
+    case ASN1_ITYPE_EXTERN: {
+      // We don't support implicit tagging with external types.
+      if (tag != -1) {
+        OPENSSL_PUT_ERROR(ASN1, ASN1_R_BAD_TEMPLATE);
+        goto err;
+      }
+      const ASN1_EXTERN_FUNCS *ef = it->funcs;
+      return ef->asn1_ex_d2i(pval, in, len, it, opt, NULL);
+    }
 
     case ASN1_ITYPE_CHOICE: {
       // It never makes sense for CHOICE types to have implicit tagging, so if
@@ -436,9 +438,7 @@ static int asn1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in,
 auxerr:
   OPENSSL_PUT_ERROR(ASN1, ASN1_R_AUX_ERROR);
 err:
-  if (combine == 0) {
-    ASN1_item_ex_free(pval, it);
-  }
+  ASN1_item_ex_free(pval, it);
   if (errtt) {
     ERR_add_error_data(4, "Field=", errtt->field_name, ", Type=", it->sname);
   } else {
@@ -598,8 +598,8 @@ static int asn1_template_noexp_d2i(ASN1_VALUE **val, const unsigned char **in,
     }
   } else {
     // Nothing special
-    ret = asn1_item_ex_d2i(val, &p, len, ASN1_ITEM_ptr(tt->item), -1,
-                           tt->flags & ASN1_TFLG_COMBINE, opt, depth);
+    ret = asn1_item_ex_d2i(val, &p, len, ASN1_ITEM_ptr(tt->item), -1, 0, opt,
+                           depth);
     if (!ret) {
       OPENSSL_PUT_ERROR(ASN1, ASN1_R_NESTED_ASN1_ERROR);
       goto err;
