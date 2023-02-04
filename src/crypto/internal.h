@@ -302,7 +302,7 @@ typedef uint32_t crypto_word_t;
 // always has the same output for a given input. This allows it to eliminate
 // dead code, move computations across loops, and vectorize.
 static inline crypto_word_t value_barrier_w(crypto_word_t a) {
-#if !defined(OPENSSL_NO_ASM) && (defined(__GNUC__) || defined(__clang__))
+#if defined(__GNUC__) || defined(__clang__)
   __asm__("" : "+r"(a) : /* no inputs */);
 #endif
   return a;
@@ -310,7 +310,7 @@ static inline crypto_word_t value_barrier_w(crypto_word_t a) {
 
 // value_barrier_u32 behaves like |value_barrier_w| but takes a |uint32_t|.
 static inline uint32_t value_barrier_u32(uint32_t a) {
-#if !defined(OPENSSL_NO_ASM) && (defined(__GNUC__) || defined(__clang__))
+#if defined(__GNUC__) || defined(__clang__)
   __asm__("" : "+r"(a) : /* no inputs */);
 #endif
   return a;
@@ -318,7 +318,7 @@ static inline uint32_t value_barrier_u32(uint32_t a) {
 
 // value_barrier_u64 behaves like |value_barrier_w| but takes a |uint64_t|.
 static inline uint64_t value_barrier_u64(uint64_t a) {
-#if !defined(OPENSSL_NO_ASM) && (defined(__GNUC__) || defined(__clang__))
+#if defined(__GNUC__) || defined(__clang__)
   __asm__("" : "+r"(a) : /* no inputs */);
 #endif
   return a;
@@ -465,19 +465,43 @@ static inline int constant_time_select_int(crypto_word_t mask, int a, int b) {
 // of memory as secret. Secret data is tracked as it flows to registers and
 // other parts of a memory. If secret data is used as a condition for a branch,
 // or as a memory index, it will trigger warnings in valgrind.
-#define CONSTTIME_SECRET(x, y) VALGRIND_MAKE_MEM_UNDEFINED(x, y)
+#define CONSTTIME_SECRET(ptr, len) VALGRIND_MAKE_MEM_UNDEFINED(ptr, len)
 
 // CONSTTIME_DECLASSIFY takes a pointer and a number of bytes and marks that
 // region of memory as public. Public data is not subject to constant-time
 // rules.
-#define CONSTTIME_DECLASSIFY(x, y) VALGRIND_MAKE_MEM_DEFINED(x, y)
+#define CONSTTIME_DECLASSIFY(ptr, len) VALGRIND_MAKE_MEM_DEFINED(ptr, len)
 
 #else
 
-#define CONSTTIME_SECRET(x, y)
-#define CONSTTIME_DECLASSIFY(x, y)
+#define CONSTTIME_SECRET(ptr, len)
+#define CONSTTIME_DECLASSIFY(ptr, len)
 
 #endif  // BORINGSSL_CONSTANT_TIME_VALIDATION
+
+static inline crypto_word_t constant_time_declassify_w(crypto_word_t v) {
+  // Return |v| through a value barrier to be safe. Valgrind-based constant-time
+  // validation is partly to check the compiler has not undone any constant-time
+  // work. Any place |BORINGSSL_CONSTANT_TIME_VALIDATION| influences
+  // optimizations, this validation is inaccurate.
+  //
+  // However, by sending pointers through valgrind, we likely inhibit escape
+  // analysis. On local variables, particularly booleans, we likely
+  // significantly impact optimizations.
+  //
+  // Thus, to be safe, stick a value barrier, in hopes of comparably inhibiting
+  // compiler analysis.
+  CONSTTIME_DECLASSIFY(&v, sizeof(v));
+  return value_barrier_w(v);
+}
+
+static inline int constant_time_declassify_int(int v) {
+  static_assert(sizeof(uint32_t) == sizeof(int),
+                "int is not the same size as uint32_t");
+  // See comment above.
+  CONSTTIME_DECLASSIFY(&v, sizeof(v));
+  return value_barrier_u32(v);
+}
 
 
 // Thread-safe initialisation.
