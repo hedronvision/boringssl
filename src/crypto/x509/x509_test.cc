@@ -1391,6 +1391,7 @@ TEST(X509Test, ZeroLengthsWithX509PARAM) {
 
 TEST(X509Test, ZeroLengthsWithCheckFunctions) {
   bssl::UniquePtr<X509> leaf(CertFromPEM(kSANTypesLeaf));
+  ASSERT_TRUE(leaf);
 
   EXPECT_EQ(
       1, X509_check_host(leaf.get(), kHostname, strlen(kHostname), 0, nullptr));
@@ -2467,7 +2468,9 @@ TEST(X509Test, TestPrintUTCTIME) {
   for (auto t : asn1_utctime_tests) {
     SCOPED_TRACE(t.val);
     bssl::UniquePtr<ASN1_UTCTIME> tm(ASN1_UTCTIME_new());
+    ASSERT_TRUE(tm);
     bssl::UniquePtr<BIO> bio(BIO_new(BIO_s_mem()));
+    ASSERT_TRUE(bio);
 
     // Use this instead of ASN1_UTCTIME_set() because some callers get
     // type-confused and pass ASN1_GENERALIZEDTIME to ASN1_UTCTIME_print().
@@ -2525,6 +2528,7 @@ TEST(X509Test, PrettyPrintIntegers) {
 
 TEST(X509Test, X509NameSet) {
   bssl::UniquePtr<X509_NAME> name(X509_NAME_new());
+  ASSERT_TRUE(name);
   EXPECT_TRUE(X509_NAME_add_entry_by_txt(
       name.get(), "C", MBSTRING_ASC, reinterpret_cast<const uint8_t *>("US"),
       -1, -1, 0));
@@ -5732,6 +5736,35 @@ TEST(X509Test, ExtensionFromConf) {
       // issuingDistributionPoint takes a list of name:value pairs. Omitting the
       // value is not allowed.
       {"issuingDistributionPoint", "fullname", nullptr, {}},
+
+      {"issuingDistributionPoint",
+       "relativename:name",
+       "[name]\nCN=Hello\n",
+       {0x30, 0x1b, 0x06, 0x03, 0x55, 0x1d, 0x1c, 0x04, 0x14, 0x30,
+        0x12, 0xa0, 0x10, 0xa1, 0x0e, 0x30, 0x0c, 0x06, 0x03, 0x55,
+        0x04, 0x03, 0x0c, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f}},
+
+      // relativename referencing a section which doesn't exist.
+      {"issuingDistributionPoint",
+       "relativename:wrong_section_name",
+       "[name]\nCN=Hello\n",
+       {}},
+
+      // relativename must be a single RDN. By default, the section-based name
+      // syntax puts each attribute into its own RDN.
+      {"issuingDistributionPoint",
+       "relativename:name",
+       "[name]\nCN=Hello\nC=US\n",
+       {}},
+
+      // A single RDN with multiple attributes is allowed.
+      {"issuingDistributionPoint",
+       "relativename:name",
+       "[name]\nCN=Hello\n+C=US\n",
+       {0x30, 0x26, 0x06, 0x03, 0x55, 0x1d, 0x1c, 0x04, 0x1f, 0x30,
+        0x1d, 0xa0, 0x1b, 0xa1, 0x19, 0x30, 0x09, 0x06, 0x03, 0x55,
+        0x04, 0x06, 0x13, 0x02, 0x55, 0x53, 0x30, 0x0c, 0x06, 0x03,
+        0x55, 0x04, 0x03, 0x0c, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f}},
 
       // Duplicate reason keys are an error. Reaching this case is interesting.
       // The value can a string like "key:value,key:value", or it can be

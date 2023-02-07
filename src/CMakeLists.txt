@@ -137,9 +137,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
     # as -Weverything, to match MSVC. Instead -W3 is the alias for -Wall.
     # See http://llvm.org/viewvc/llvm-project?view=revision&revision=319116
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -W3 -Wno-unused-parameter -fmsc-version=1900")
-    # googletest suppresses warning C4996 via a pragma, but clang-cl does not
-    # honor it. Suppress it here to compensate. See https://crbug.com/772117.
-    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-deprecated-declarations")
   else()
     if(EMSCRIPTEN)
       # emscripten's emcc/clang does not accept the "-ggdb" flag.
@@ -364,6 +361,10 @@ if(CONSTANT_TIME_VALIDATION)
   add_definitions(-DNDEBUG)
 endif()
 
+if(MALLOC_FAILURE_TESTING)
+  add_definitions(-DBORINGSSL_MALLOC_FAILURE_TESTING)
+endif()
+
 function(go_executable dest package)
   set(godeps "${CMAKE_SOURCE_DIR}/util/godeps.go")
   if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
@@ -416,8 +417,9 @@ if(FIPS_DELOCATE OR NOT OPENSSL_NO_ASM)
   else()
     enable_language(ASM)
     set(OPENSSL_ASM TRUE)
-    # CMake does not add -isysroot and -arch flags to assembly.
-    if(APPLE)
+    # Work around https://gitlab.kitware.com/cmake/cmake/-/issues/20771 in older
+    # CMake versions.
+    if(APPLE AND CMAKE_VERSION VERSION_LESS 3.19)
       if(CMAKE_OSX_SYSROOT)
         set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -isysroot \"${CMAKE_OSX_SYSROOT}\"")
       endif()
@@ -508,9 +510,11 @@ endif()
 # Add minimal googletest targets. The provided one has many side-effects, and
 # googletest has a very straightforward build.
 add_library(boringssl_gtest third_party/googletest/src/gtest-all.cc)
-target_include_directories(boringssl_gtest PRIVATE third_party/googletest)
-
-include_directories(third_party/googletest/include)
+target_include_directories(
+    boringssl_gtest
+    PUBLIC third_party/googletest/include
+    PRIVATE third_party/googletest
+)
 
 # Declare a dummy target to build all unit tests. Test targets should inject
 # themselves as dependencies next to the target definition.
