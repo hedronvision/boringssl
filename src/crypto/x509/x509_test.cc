@@ -3591,6 +3591,8 @@ TEST(X509Test, GeneralName)  {
       {0x82, 0x01, 0x61},
       // [2 PRIMITIVE] { "b" }
       {0x82, 0x01, 0x62},
+      // [3] {}
+      {0xa3, 0x00},
       // [4] {
       //   SEQUENCE {
       //     SET {
@@ -3687,6 +3689,12 @@ TEST(X509Test, GeneralName)  {
         d2i_GENERAL_NAME(nullptr, &ptr, kNames[i].size()));
     ASSERT_TRUE(a);
     ASSERT_EQ(ptr, kNames[i].data() + kNames[i].size());
+
+    uint8_t *enc = nullptr;
+    int enc_len = i2d_GENERAL_NAME(a.get(), &enc);
+    ASSERT_GE(enc_len, 0);
+    bssl::UniquePtr<uint8_t> free_enc(enc);
+    EXPECT_EQ(Bytes(enc, enc_len), Bytes(kNames[i]));
 
     for (size_t j = 0; j < OPENSSL_ARRAY_SIZE(kNames); j++) {
       SCOPED_TRACE(Bytes(kNames[j]));

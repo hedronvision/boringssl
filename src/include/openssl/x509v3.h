@@ -167,7 +167,7 @@ typedef struct GENERAL_NAME_st {
     OTHERNAME *otherName;  // otherName
     ASN1_IA5STRING *rfc822Name;
     ASN1_IA5STRING *dNSName;
-    ASN1_TYPE *x400Address;
+    ASN1_STRING *x400Address;
     X509_NAME *directoryName;
     EDIPARTYNAME *ediPartyName;
     ASN1_IA5STRING *uniformResourceIdentifier;
@@ -179,7 +179,6 @@ typedef struct GENERAL_NAME_st {
     X509_NAME *dirn;        // dirn
     ASN1_IA5STRING *ia5;    // rfc822Name, dNSName, uniformResourceIdentifier
     ASN1_OBJECT *rid;       // registeredID
-    ASN1_TYPE *other;       // x400Address
   } d;
 } GENERAL_NAME;
 
@@ -427,12 +426,6 @@ DECLARE_ASN1_FUNCTIONS(AUTHORITY_KEYID)
 DECLARE_ASN1_FUNCTIONS(GENERAL_NAME)
 OPENSSL_EXPORT GENERAL_NAME *GENERAL_NAME_dup(GENERAL_NAME *a);
 
-// GENERAL_NAME_cmp returns zero if |a| and |b| are equal and a non-zero
-// value otherwise. Note this function does not provide a comparison suitable
-// for sorting.
-OPENSSL_EXPORT int GENERAL_NAME_cmp(const GENERAL_NAME *a,
-                                    const GENERAL_NAME *b);
-
 // i2v_GENERAL_NAME serializes |gen| as a |CONF_VALUE|. If |ret| is non-NULL, it
 // appends the value to |ret| and returns |ret| on success or NULL on error. If
 // it returns NULL, the caller is still responsible for freeing |ret|. If |ret|
@@ -469,7 +462,6 @@ OPENSSL_EXPORT GENERAL_NAMES *v2i_GENERAL_NAMES(
 
 DECLARE_ASN1_FUNCTIONS_const(OTHERNAME)
 DECLARE_ASN1_FUNCTIONS_const(EDIPARTYNAME)
-OPENSSL_EXPORT int OTHERNAME_cmp(OTHERNAME *a, OTHERNAME *b);
 OPENSSL_EXPORT void GENERAL_NAME_set0_value(GENERAL_NAME *a, int type,
                                             void *value);
 OPENSSL_EXPORT void *GENERAL_NAME_get0_value(const GENERAL_NAME *a, int *ptype);

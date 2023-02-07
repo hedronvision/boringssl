@@ -566,6 +566,6 @@ if(NOT ANDROID)
 endif()
 
 if(WIN32)
-  target_link_libraries(bssl ws2_32)
+  target_link_libraries(crypto ws2_32)
 endif()
 
