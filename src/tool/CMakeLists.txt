@@ -1,5 +1,3 @@
-include_directories(../include)
-
 add_executable(
   bssl
 
@@ -21,6 +19,5 @@ add_executable(
   tool.cc
   transport_common.cc
 )
-install(TARGETS bssl DESTINATION ${CMAKE_INSTALL_BINDIR})
-add_dependencies(bssl global_target)
+install_if_enabled(TARGETS bssl DESTINATION ${INSTALL_DESTINATION_DEFAULT})
 target_link_libraries(bssl ssl crypto)

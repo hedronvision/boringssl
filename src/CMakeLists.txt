@@ -24,10 +24,23 @@ enable_language(CXX)
 
 include(GNUInstallDirs)
 
-# This is a dummy target which all other targets depend on (manually - see other
-# CMakeLists.txt files). This gives us a hook to add any targets which need to
-# run before all other targets.
-add_custom_target(global_target)
+# CMake versions before 3.14 do not have default destination values. Executable
+# and library targets that use a default destination should include this
+# variable.
+if(CMAKE_VERSION VERSION_LESS "3.14")
+  set(INSTALL_DESTINATION_DEFAULT
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+# Wrap the CMake install function so we can disable it.
+set(INSTALL_ENABLED 1)
+function(install_if_enabled)
+  if(INSTALL_ENABLED)
+    install(${ARGV})
+  endif()
+endfunction()
 
 if(ANDROID)
   # Android-NDK CMake files reconfigure the path and so Perl won't be found.
@@ -94,7 +107,7 @@ if(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_SYMBOLS)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/symbol_prefix_include
     COMMAND ${GO_EXECUTABLE} run ${CMAKE_CURRENT_SOURCE_DIR}/util/make_prefix_headers.go -out ${CMAKE_CURRENT_BINARY_DIR}/symbol_prefix_include ${BORINGSSL_PREFIX_SYMBOLS}
     DEPENDS util/make_prefix_headers.go
-            ${CMAKE_BINARY_DIR}/${BORINGSSL_PREFIX_SYMBOLS})
+            ${BORINGSSL_PREFIX_SYMBOLS})
 
   # add_dependencies needs a target, not a file, so we add an intermediate
   # target.
@@ -103,9 +116,10 @@ if(BORINGSSL_PREFIX AND BORINGSSL_PREFIX_SYMBOLS)
     DEPENDS symbol_prefix_include/boringssl_prefix_symbols.h
             symbol_prefix_include/boringssl_prefix_symbols_asm.h
             symbol_prefix_include/boringssl_prefix_symbols_nasm.inc)
-  add_dependencies(global_target boringssl_prefix_symbols)
 elseif(BORINGSSL_PREFIX OR BORINGSSL_PREFIX_SYMBOLS)
   message(FATAL_ERROR "Must specify both or neither of BORINGSSL_PREFIX and BORINGSSL_PREFIX_SYMBOLS")
+else()
+  add_custom_target(boringssl_prefix_symbols)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -400,6 +414,12 @@ if(USE_CUSTOM_LIBCXX)
     message(FATAL_ERROR "USE_CUSTOM_LIBCXX only supported with Clang")
   endif()
 
+  # CMake does not allow installing a library without installing dependencies.
+  # If we installed libcrypto, we'd have to install our custom libc++, which
+  # does not make sense. As this is a test-only configuration, disable
+  # installing.
+  set(INSTALL_ENABLED 0)
+
   # CMAKE_CXX_FLAGS ends up in the linker flags as well, so use
   # add_compile_options. There does not appear to be a way to set
   # language-specific compile-only flags.
@@ -433,7 +453,6 @@ if(USE_CUSTOM_LIBCXX)
     libcxxabi PRIVATE
     -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS
   )
-  install(TARGETS libcxxabi EXPORT OpenSSLTargets)
 
   add_library(libcxx ${LIBCXX_SOURCES})
   if(ASAN OR MSAN OR TSAN)
@@ -458,7 +477,6 @@ if(USE_CUSTOM_LIBCXX)
   # libc++abi depends on libc++ internal headers.
   set_property(TARGET libcxx libcxxabi APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/util/bot/libcxx/src")
   target_link_libraries(libcxx libcxxabi)
-  install(TARGETS libcxx EXPORT OpenSSLTargets DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
@@ -562,11 +580,11 @@ add_custom_target(
     DEPENDS all_tests bssl_shim handshaker fips_specific_tests_if_any
     USES_TERMINAL)
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install_if_enabled(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(EXPORT OpenSSLTargets
+install_if_enabled(EXPORT OpenSSLTargets
   FILE OpenSSLTargets.cmake
   NAMESPACE OpenSSL::
   DESTINATION lib/cmake/OpenSSL
 )
-install(FILES cmake/OpenSSLConfig.cmake DESTINATION lib/cmake/OpenSSL)
+install_if_enabled(FILES cmake/OpenSSLConfig.cmake DESTINATION lib/cmake/OpenSSL)

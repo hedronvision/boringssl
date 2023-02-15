@@ -1,5 +1,3 @@
-include_directories(../include)
-
 add_subdirectory(fipsmodule)
 add_subdirectory(test)
 
@@ -280,8 +278,6 @@ add_library(
   x509v3/v3_lib.c
   x509v3/v3_ncons.c
   x509v3/v3_ocsp.c
-  x509v3/v3_pci.c
-  x509v3/v3_pcia.c
   x509v3/v3_pcons.c
   x509v3/v3_pmaps.c
   x509v3/v3_prn.c
@@ -298,15 +294,11 @@ endif()
 if(OPENSSL_NASM)
   target_sources(crypto PRIVATE ${CRYPTO_SOURCES_NASM})
 endif()
-target_include_directories(crypto INTERFACE
+target_include_directories(crypto PUBLIC
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-install(TARGETS crypto EXPORT OpenSSLTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+install_if_enabled(TARGETS crypto EXPORT OpenSSLTargets ${INSTALL_DESTINATION_DEFAULT})
 set_property(TARGET crypto PROPERTY EXPORT_NAME Crypto)
 
 if(FIPS_SHARED)
@@ -325,7 +317,7 @@ if(FIPS_SHARED)
   )
 endif()
 
-add_dependencies(crypto global_target)
+add_dependencies(crypto boringssl_prefix_symbols)
 
 if(FIPS_DELOCATE OR FIPS_SHARED)
   add_dependencies(crypto bcm_o_target)
@@ -356,10 +348,7 @@ add_executable(
 
   fipsmodule/rand/urandom_test.cc
 )
-
 target_link_libraries(urandom_test test_support_lib boringssl_gtest crypto)
-
-add_dependencies(urandom_test global_target)
 add_dependencies(all_tests urandom_test)
 
 add_executable(
@@ -433,8 +422,5 @@ add_executable(
   $<TARGET_OBJECTS:crypto_test_data>
   $<TARGET_OBJECTS:boringssl_gtest_main>
 )
-
-add_dependencies(crypto_test global_target)
-
 target_link_libraries(crypto_test test_support_lib boringssl_gtest crypto)
 add_dependencies(all_tests crypto_test)

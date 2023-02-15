@@ -80,8 +80,6 @@ if(BUILD_SHARED_LIBS)
   set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 endif()
 
-include_directories(src/include)
-
 set(
   CRYPTO_SOURCES_ASM
 
@@ -485,8 +483,6 @@ add_library(
   src/crypto/x509v3/v3_lib.c
   src/crypto/x509v3/v3_ncons.c
   src/crypto/x509v3/v3_ocsp.c
-  src/crypto/x509v3/v3_pci.c
-  src/crypto/x509v3/v3_pcia.c
   src/crypto/x509v3/v3_pcons.c
   src/crypto/x509v3/v3_pmaps.c
   src/crypto/x509v3/v3_prn.c
@@ -495,6 +491,7 @@ add_library(
   src/crypto/x509v3/v3_utl.c
 )
 
+target_include_directories(crypto PUBLIC src/include)
 add_library(
   ssl
 
