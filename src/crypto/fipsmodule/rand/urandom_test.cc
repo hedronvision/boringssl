@@ -36,6 +36,7 @@
 #include <sys/user.h>
 
 #include "fork_detect.h"
+#include "getrandom_fillin.h"
 
 #if !defined(PTRACE_O_EXITKILL)
 #define PTRACE_O_EXITKILL (1 << 20)
@@ -220,14 +221,14 @@ static bool regs_set_ret(int child_pid, int ret);
 // to fail to run.
 static bool regs_break_syscall(int child_pid, const struct regs *orig_regs);
 
-#if defined(OPENSSL_X86_64)
-
 struct regs {
   uintptr_t syscall;
   uintptr_t args[3];
   uintptr_t ret;
   struct user_regs_struct regs;
 };
+
+#if defined(OPENSSL_X86_64)
 
 static bool regs_read(struct regs *out_regs, int child_pid) {
   if (ptrace(PTRACE_GETREGS, child_pid, nullptr, &out_regs->regs) != 0) {
@@ -252,46 +253,38 @@ static bool regs_set_ret(int child_pid, int ret) {
 }
 
 static bool regs_break_syscall(int child_pid, const struct regs *orig_regs) {
-  // Replacing the syscall number with -1 doesn't work on AArch64 thus we set
-  // the first argument to -1, which suffices to break the syscalls that we care
-  // about here.
-  struct user_regs_struct regs;
-  memcpy(&regs, &orig_regs->regs, sizeof(regs));
-  regs.rdi = -1;
+  // Replace the syscall number with -1 to cause the kernel to fail the call.
+  struct user_regs_struct regs = orig_regs->regs;
+  regs.orig_rax = -1;
   return ptrace(PTRACE_SETREGS, child_pid, nullptr, &regs) == 0;
 }
 
 #elif defined(OPENSSL_AARCH64)
 
-struct regs {
-  uintptr_t syscall;
-  uintptr_t args[3];
-  uintptr_t ret;
-  uint64_t regs[9];
-};
-
 static bool regs_read(struct regs *out_regs, int child_pid) {
   struct iovec io;
-  io.iov_base = out_regs->regs;
+  io.iov_base = &out_regs->regs;
   io.iov_len = sizeof(out_regs->regs);
   if (ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &io) != 0) {
     return false;
   }
 
-  out_regs->syscall = out_regs->regs[8];
-  out_regs->ret = out_regs->regs[0];
-  out_regs->args[0] = out_regs->regs[0];
-  out_regs->args[1] = out_regs->regs[1];
-  out_regs->args[2] = out_regs->regs[2];
+  out_regs->syscall = out_regs->regs.regs[8];
+  out_regs->ret = out_regs->regs.regs[0];
+  out_regs->args[0] = out_regs->regs.regs[0];
+  out_regs->args[1] = out_regs->regs.regs[1];
+  out_regs->args[2] = out_regs->regs.regs[2];
 
   return true;
 }
 
-static bool regs_set(int child_pid, const struct regs *new_regs) {
+static bool set_regset(int child_pid, int regset, const void *data,
+                       size_t len) {
   struct iovec io;
-  io.iov_base = (void *) new_regs->regs;
-  io.iov_len = sizeof(new_regs->regs);
-  return ptrace(PTRACE_SETREGSET, child_pid, NT_PRSTATUS, &io) == 0;
+  io.iov_base = const_cast<void *>(data);
+  io.iov_len = len;
+  return ptrace(PTRACE_SETREGSET, child_pid, reinterpret_cast<void *>(regset),
+                &io) == 0;
 }
 
 static bool regs_set_ret(int child_pid, int ret) {
@@ -299,17 +292,14 @@ static bool regs_set_ret(int child_pid, int ret) {
   if (!regs_read(&regs, child_pid)) {
     return false;
   }
-  regs.regs[0] = ret;
-  return regs_set(child_pid, &regs);
+  regs.regs.regs[0] = ret;
+  return set_regset(child_pid, NT_PRSTATUS, &regs.regs, sizeof(regs.regs));
 }
 
 static bool regs_break_syscall(int child_pid, const struct regs *orig_regs) {
-  // Replacing the syscall number with -1 doesn't work on AArch64 thus we set
-  // the first argument to -1, which suffices to break the syscalls that we care
-  // about here.
-  struct regs copy = *orig_regs;
-  copy.regs[0] = -1;
-  return regs_set(child_pid, orig_regs);
+  // Replace the syscall number with -1 to cause the kernel to fail the call.
+  int syscall = -1;
+  return set_regset(child_pid, NT_ARM_SYSTEM_CALL, &syscall, sizeof(syscall));
 }
 
 #endif
@@ -435,7 +425,8 @@ static void GetTrace(std::vector<Event> *out_trace, unsigned flags,
   // Parent process
   int status;
   ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
-  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "Child was not stopped with SIGSTOP: " << status;
 
   // Set options so that:
   //   a) the child process is killed once this process dies.
@@ -466,7 +457,8 @@ static void GetTrace(std::vector<Event> *out_trace, unsigned flags,
     }
 
     // Otherwise the only valid ptrace event is a system call stop.
-    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
+        << "Child was not stopped with a syscall stop: " << status;
 
     struct regs regs;
     ASSERT_TRUE(regs_read(&regs, child_pid));
@@ -776,6 +768,12 @@ static void CheckInvariants(const std::vector<Event> &events) {
 TEST(URandomTest, Test) {
   char buf[256];
 
+  // Some Android systems lack getrandom.
+  uint8_t scratch[1];
+  const bool has_getrandom =
+      (syscall(__NR_getrandom, scratch, sizeof(scratch), GRND_NONBLOCK) != -1 ||
+       errno != ENOSYS);
+
 #define TRACE_FLAG(flag)                                         \
   snprintf(buf, sizeof(buf), #flag ": %d", (flags & flag) != 0); \
   SCOPED_TRACE(buf);
@@ -786,6 +784,10 @@ TEST(URandomTest, Test) {
       // These cases are meaningless unless the code will try to use the entropy
       // daemon.
       continue;
+    }
+
+    if (!has_getrandom && !(flags & NO_GETRANDOM)) {
+        continue;
     }
 
     TRACE_FLAG(NO_GETRANDOM);
