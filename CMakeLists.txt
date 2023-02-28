@@ -492,7 +492,8 @@ add_library(
   src/crypto/x509v3/v3_utl.c
 )
 
-target_include_directories(crypto PUBLIC src/include)
+target_include_directories(crypto PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/include>)
+
 add_library(
   ssl
 
@@ -534,6 +535,8 @@ add_library(
   src/ssl/tls_method.cc
   src/ssl/tls_record.cc
 )
+
+target_link_libraries(ssl crypto)
 
 add_executable(
   bssl
