@@ -160,8 +160,16 @@ wildcards = "allow"
 # * all - Both lowest-version and simplest-path are used
 highlight = "all"
 # List of crates that are allowed. Use with care!
+# This is meant to control any external dependencies. This is effectively
+# a minimalist binding library and we try to have none, so you are strongly
+# encouraged not to add dependencies here.
 allow = [
-    #{ name = "ansi_term", version = "=0.11.0" },
+    # bssl-crypto should be allowed, version appropriately.
+    { name = "bssl-crypto", version = "=0.1.0" },
+    # bssl-sys should be allowed, version appropriately.
+    { name = "bssl-sys", version = "=0.1.0" },
+    # hex-literal was added for ease of tests, but should be removed.
+    { name = "hex-literal", version = "=0.3.4" },
 ]
 # List of crates to deny
 deny = [
