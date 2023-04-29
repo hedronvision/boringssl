@@ -547,8 +547,7 @@ BSSL_NAMESPACE_BEGIN
 #define SSL_AES256 0x00000004u
 #define SSL_AES128GCM 0x00000008u
 #define SSL_AES256GCM 0x00000010u
-#define SSL_eNULL 0x00000020u
-#define SSL_CHACHA20POLY1305 0x00000040u
+#define SSL_CHACHA20POLY1305 0x00000020u
 
 #define SSL_AES (SSL_AES128 | SSL_AES256 | SSL_AES128GCM | SSL_AES256GCM)
 
@@ -633,9 +632,11 @@ const EVP_MD *ssl_get_handshake_digest(uint16_t version,
 // newly-allocated |SSLCipherPreferenceList| containing the result. It returns
 // true on success and false on failure. If |strict| is true, nonsense will be
 // rejected. If false, nonsense will be silently ignored. An empty result is
-// considered an error regardless of |strict|.
+// considered an error regardless of |strict|. |has_aes_hw| indicates if the
+// list should be ordered based on having support for AES in hardware or not.
 bool ssl_create_cipher_list(UniquePtr<SSLCipherPreferenceList> *out_cipher_list,
-                            const char *rule_str, bool strict);
+                            const bool has_aes_hw, const char *rule_str,
+                            bool strict);
 
 // ssl_cipher_auth_mask_for_key returns the mask of cipher |algorithm_auth|
 // values suitable for use with |key| in TLS 1.2 and below.
@@ -659,14 +660,17 @@ size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher);
 
 // ssl_choose_tls13_cipher returns an |SSL_CIPHER| corresponding with the best
 // available from |cipher_suites| compatible with |version|, |group_id|, and
-// |only_fips|. It returns NULL if there isn't a compatible cipher.
-const SSL_CIPHER *ssl_choose_tls13_cipher(CBS cipher_suites, uint16_t version,
-                                          uint16_t group_id, bool only_fips);
+// |policy|. It returns NULL if there isn't a compatible cipher. |has_aes_hw|
+// indicates if the choice should be made as if support for AES in hardware
+// is available.
+const SSL_CIPHER *ssl_choose_tls13_cipher(CBS cipher_suites, bool has_aes_hw,
+                                          uint16_t version, uint16_t group_id,
+                                          enum ssl_compliance_policy_t policy);
 
 // ssl_tls13_cipher_meets_policy returns true if |cipher_id| is acceptable given
-// |only_fips|. (For now there's only a single policy and so the policy argument
-// is just a bool.)
-bool ssl_tls13_cipher_meets_policy(uint16_t cipher_id, bool only_fips);
+// |policy|.
+bool ssl_tls13_cipher_meets_policy(uint16_t cipher_id,
+                                   enum ssl_compliance_policy_t policy);
 
 
 // Transcript layer.
@@ -3059,6 +3063,10 @@ struct SSL_CONFIG {
   // structure for the client to use when negotiating ECH.
   Array<uint8_t> client_ech_config_list;
 
+  // tls13_cipher_policy limits the set of ciphers that can be selected when
+  // negotiating a TLS 1.3 connection.
+  enum ssl_compliance_policy_t tls13_cipher_policy = ssl_compliance_policy_none;
+
   // verify_mode is a bitmask of |SSL_VERIFY_*| values.
   uint8_t verify_mode = SSL_VERIFY_NONE;
 
@@ -3108,9 +3116,14 @@ struct SSL_CONFIG {
   // permute_extensions is whether to permute extensions when sending messages.
   bool permute_extensions : 1;
 
-  // only_fips_cipher_suites_in_tls13 constrains the selection of cipher suites
-  // in TLS 1.3 such that only FIPS approved ones will be selected.
-  bool only_fips_cipher_suites_in_tls13 : 1;
+  // aes_hw_override if set indicates we should override checking for aes
+  // hardware support, and use the value in aes_hw_override_value instead.
+  bool aes_hw_override : 1;
+
+  // aes_hw_override_value is used for testing to indicate the support or lack
+  // of support for AES hw. The value is only considered if |aes_hw_override| is
+  // true.
+  bool aes_hw_override_value : 1;
 };
 
 // From RFC 8446, used in determining PSK modes.
@@ -3671,6 +3684,10 @@ struct ssl_ctx_st {
   int (*legacy_ocsp_callback)(SSL *ssl, void *arg) = nullptr;
   void *legacy_ocsp_callback_arg = nullptr;
 
+  // tls13_cipher_policy limits the set of ciphers that can be selected when
+  // negotiating a TLS 1.3 connection.
+  enum ssl_compliance_policy_t tls13_cipher_policy = ssl_compliance_policy_none;
+
   // verify_sigalgs, if not empty, is the set of signature algorithms
   // accepted from the peer in decreasing order of preference.
   bssl::Array<uint16_t> verify_sigalgs;
@@ -3718,9 +3735,14 @@ struct ssl_ctx_st {
   // If enable_early_data is true, early data can be sent and accepted.
   bool enable_early_data : 1;
 
-  // only_fips_cipher_suites_in_tls13 constrains the selection of cipher suites
-  // in TLS 1.3 such that only FIPS approved ones will be selected.
-  bool only_fips_cipher_suites_in_tls13 : 1;
+  // aes_hw_override if set indicates we should override checking for AES
+  // hardware support, and use the value in aes_hw_override_value instead.
+  bool aes_hw_override : 1;
+
+  // aes_hw_override_value is used for testing to indicate the support or lack
+  // of support for AES hardware. The value is only considered if
+  // |aes_hw_override| is true.
+  bool aes_hw_override_value : 1;
 
  private:
   ~ssl_ctx_st();

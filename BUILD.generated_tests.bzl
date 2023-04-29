@@ -47,6 +47,7 @@ test_support_sources = [
     "src/crypto/pkcs8/internal.h",
     "src/crypto/poly1305/internal.h",
     "src/crypto/pool/internal.h",
+    "src/crypto/rsa_extra/internal.h",
     "src/crypto/test/abi_test.h",
     "src/crypto/test/file_test.cc",
     "src/crypto/test/file_test.h",
@@ -71,8 +72,10 @@ test_support_sources = [
     "src/ssl/test/test_state.h",
     "src/third_party/fiat/curve25519_32.h",
     "src/third_party/fiat/curve25519_64.h",
+    "src/third_party/fiat/curve25519_64_msvc.h",
     "src/third_party/fiat/p256_32.h",
     "src/third_party/fiat/p256_64.h",
+    "src/third_party/fiat/p256_64_msvc.h",
 ]
 
 crypto_test_sources = [
@@ -110,13 +113,13 @@ crypto_test_sources = [
     "src/crypto/fipsmodule/ec/ec_test.cc",
     "src/crypto/fipsmodule/ec/p256-nistz_test.cc",
     "src/crypto/fipsmodule/ecdsa/ecdsa_test.cc",
+    "src/crypto/fipsmodule/hkdf/hkdf_test.cc",
     "src/crypto/fipsmodule/md5/md5_test.cc",
     "src/crypto/fipsmodule/modes/gcm_test.cc",
     "src/crypto/fipsmodule/rand/ctrdrbg_test.cc",
     "src/crypto/fipsmodule/rand/fork_detect_test.cc",
     "src/crypto/fipsmodule/service_indicator/service_indicator_test.cc",
     "src/crypto/fipsmodule/sha/sha_test.cc",
-    "src/crypto/hkdf/hkdf_test.cc",
     "src/crypto/hmac_extra/hmac_test.cc",
     "src/crypto/hpke/hpke_test.cc",
     "src/crypto/hrss/hrss_test.cc",
