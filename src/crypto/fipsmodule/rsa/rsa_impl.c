@@ -79,9 +79,18 @@ int rsa_check_public_key(const RSA *rsa) {
     return 0;
   }
 
+  // TODO(davidben): 16384-bit RSA is huge. Can we bring this down to a limit of
+  // 8192-bit?
   unsigned n_bits = BN_num_bits(rsa->n);
   if (n_bits > 16 * 1024) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_MODULUS_TOO_LARGE);
+    return 0;
+  }
+
+  // TODO(crbug.com/boringssl/607): Raise this limit. 512-bit RSA was factored
+  // in 1999.
+  if (n_bits < 512) {
+    OPENSSL_PUT_ERROR(RSA, RSA_R_KEY_SIZE_TOO_SMALL);
     return 0;
   }
 
@@ -122,21 +131,15 @@ int rsa_check_public_key(const RSA *rsa) {
         OPENSSL_PUT_ERROR(RSA, RSA_R_BAD_E_VALUE);
         return 0;
       }
+
+      // The upper bound on |e_bits| and lower bound on |n_bits| imply e is
+      // bounded by n.
+      assert(BN_ucmp(rsa->n, rsa->e) > 0);
     }
   } else if (!(rsa->flags & RSA_FLAG_NO_PUBLIC_EXPONENT)) {
     OPENSSL_PUT_ERROR(RSA, RSA_R_VALUE_MISSING);
     return 0;
   }
-
-  // Verify |n > e|. Comparing |n_bits| to |kMaxExponentBits| is a small
-  // shortcut to comparing |n| and |e| directly. In reality, |kMaxExponentBits|
-  // is much smaller than the minimum RSA key size that any application should
-  // accept.
-  if (n_bits <= kMaxExponentBits) {
-    OPENSSL_PUT_ERROR(RSA, RSA_R_KEY_SIZE_TOO_SMALL);
-    return 0;
-  }
-  assert(rsa->e == NULL || BN_ucmp(rsa->n, rsa->e) > 0);
 
   return 1;
 }
@@ -173,6 +176,11 @@ static int freeze_private_key(RSA *rsa, BN_CTX *ctx) {
   CRYPTO_MUTEX_lock_write(&rsa->lock);
   if (rsa->private_key_frozen) {
     ret = 1;
+    goto err;
+  }
+
+  // Check the public components are within DoS bounds.
+  if (!rsa_check_public_key(rsa)) {
     goto err;
   }
 
