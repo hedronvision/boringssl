@@ -407,8 +407,7 @@ add_library(
   src/crypto/rand_extra/rand_extra.c
   src/crypto/rand_extra/windows.c
   src/crypto/rc4/rc4.c
-  src/crypto/refcount_c11.c
-  src/crypto/refcount_lock.c
+  src/crypto/refcount.c
   src/crypto/rsa_extra/rsa_asn1.c
   src/crypto/rsa_extra/rsa_crypt.c
   src/crypto/rsa_extra/rsa_print.c
