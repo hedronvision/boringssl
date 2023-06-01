@@ -446,7 +446,7 @@ static const char *kBadRules[] = {
   "COMPLEMENTOFDEFAULT",
   // Invalid command.
   "?BAR",
-  // Special operators are not allowed if groups are used.
+  // Special operators are not allowed if equi-preference groups are used.
   "[ECDHE-RSA-CHACHA20-POLY1305|ECDHE-RSA-AES128-GCM-SHA256]:+FOO",
   "[ECDHE-RSA-CHACHA20-POLY1305|ECDHE-RSA-AES128-GCM-SHA256]:!FOO",
   "[ECDHE-RSA-CHACHA20-POLY1305|ECDHE-RSA-AES128-GCM-SHA256]:-FOO",
@@ -478,29 +478,29 @@ static const char* kShouldIncludeCBCSHA256[] = {
 static const CurveTest kCurveTests[] = {
   {
     "P-256",
-    { SSL_CURVE_SECP256R1 },
+    { SSL_GROUP_SECP256R1 },
   },
   {
     "P-256:X25519Kyber768Draft00",
-    { SSL_CURVE_SECP256R1, SSL_CURVE_X25519_KYBER768_DRAFT00 },
+    { SSL_GROUP_SECP256R1, SSL_GROUP_X25519_KYBER768_DRAFT00 },
   },
 
   {
     "P-256:P-384:P-521:X25519",
     {
-      SSL_CURVE_SECP256R1,
-      SSL_CURVE_SECP384R1,
-      SSL_CURVE_SECP521R1,
-      SSL_CURVE_X25519,
+      SSL_GROUP_SECP256R1,
+      SSL_GROUP_SECP384R1,
+      SSL_GROUP_SECP521R1,
+      SSL_GROUP_X25519,
     },
   },
   {
     "prime256v1:secp384r1:secp521r1:x25519",
     {
-      SSL_CURVE_SECP256R1,
-      SSL_CURVE_SECP384R1,
-      SSL_CURVE_SECP521R1,
-      SSL_CURVE_X25519,
+      SSL_GROUP_SECP256R1,
+      SSL_GROUP_SECP384R1,
+      SSL_GROUP_SECP521R1,
+      SSL_GROUP_X25519,
     },
   },
 };
@@ -695,7 +695,7 @@ TEST(SSLTest, CurveRules) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx);
 
-    ASSERT_TRUE(SSL_CTX_set1_curves_list(ctx.get(), t.rule));
+    ASSERT_TRUE(SSL_CTX_set1_groups_list(ctx.get(), t.rule));
     ASSERT_EQ(t.expected.size(), ctx->supported_group_list.size());
     for (size_t i = 0; i < t.expected.size(); i++) {
       EXPECT_EQ(t.expected[i], ctx->supported_group_list[i]);
@@ -707,7 +707,7 @@ TEST(SSLTest, CurveRules) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx);
 
-    EXPECT_FALSE(SSL_CTX_set1_curves_list(ctx.get(), rule));
+    EXPECT_FALSE(SSL_CTX_set1_groups_list(ctx.get(), rule));
     ERR_clear_error();
   }
 }
@@ -5578,8 +5578,8 @@ TEST(SSLTest, ApplyHandoffRemovesUnsupportedCurves) {
   ASSERT_TRUE(server);
 
   // handoff is a handoff message that has been artificially modified to pretend
-  // that only one curve is supported.  When it is applied to |server|, all
-  // curves but that one should be removed.
+  // that only one ECDH group is supported.  When it is applied to |server|, all
+  // groups but that one should be removed.
   //
   // See |ApplyHandoffRemovesUnsupportedCiphers| for how to make a new one of
   // these.
@@ -5902,7 +5902,7 @@ TEST_P(SSLVersionTest, SessionPropertiesThreads) {
     bssl::UniquePtr<X509> peer(SSL_get_peer_certificate(ssl));
     EXPECT_TRUE(peer);
     EXPECT_TRUE(SSL_get_current_cipher(ssl));
-    EXPECT_TRUE(SSL_get_curve_id(ssl));
+    EXPECT_TRUE(SSL_get_group_id(ssl));
   };
 
   std::vector<std::thread> threads;
@@ -6512,13 +6512,13 @@ TEST_F(QUICMethodTest, HelloRetryRequest) {
   ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
   ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
 
-  // BoringSSL predicts the most preferred curve, so using different preferences
-  // will trigger HelloRetryRequest.
+  // BoringSSL predicts the most preferred ECDH group, so using different
+  // preferences will trigger HelloRetryRequest.
   static const int kClientPrefs[] = {NID_X25519, NID_X9_62_prime256v1};
-  ASSERT_TRUE(SSL_CTX_set1_curves(client_ctx_.get(), kClientPrefs,
+  ASSERT_TRUE(SSL_CTX_set1_groups(client_ctx_.get(), kClientPrefs,
                                   OPENSSL_ARRAY_SIZE(kClientPrefs)));
   static const int kServerPrefs[] = {NID_X9_62_prime256v1, NID_X25519};
-  ASSERT_TRUE(SSL_CTX_set1_curves(server_ctx_.get(), kServerPrefs,
+  ASSERT_TRUE(SSL_CTX_set1_groups(server_ctx_.get(), kServerPrefs,
                                   OPENSSL_ARRAY_SIZE(kServerPrefs)));
 
   ASSERT_TRUE(CreateClientAndServer());
@@ -6758,7 +6758,7 @@ TEST_F(QUICMethodTest, ZeroRTTReject) {
       // Configure the server to prefer P-256, which will reject 0-RTT via
       // HelloRetryRequest.
       int p256 = NID_X9_62_prime256v1;
-      ASSERT_TRUE(SSL_set1_curves(server_.get(), &p256, 1));
+      ASSERT_TRUE(SSL_set1_groups(server_.get(), &p256, 1));
     } else {
       // Disable 0-RTT on the server, so it will reject it.
       SSL_set_early_data_enabled(server_.get(), 0);
@@ -7739,7 +7739,7 @@ TEST(SSLTest, ConnectionPropertiesDuringRenegotiate) {
   ASSERT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION));
   ASSERT_TRUE(SSL_CTX_set_strict_cipher_list(
       ctx.get(), "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"));
-  ASSERT_TRUE(SSL_CTX_set1_curves_list(ctx.get(), "X25519"));
+  ASSERT_TRUE(SSL_CTX_set1_groups_list(ctx.get(), "X25519"));
   ASSERT_TRUE(SSL_CTX_set1_sigalgs_list(ctx.get(), "rsa_pkcs1_sha256"));
 
   // Connect a client and server that accept renegotiation.
@@ -7754,7 +7754,8 @@ TEST(SSLTest, ConnectionPropertiesDuringRenegotiate) {
     ASSERT_TRUE(cipher);
     EXPECT_EQ(SSL_CIPHER_get_id(cipher),
               uint32_t{TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256});
-    EXPECT_EQ(SSL_get_curve_id(client.get()), SSL_CURVE_X25519);
+    EXPECT_EQ(SSL_get_group_id(client.get()), SSL_GROUP_X25519);
+    EXPECT_EQ(SSL_get_negotiated_group(client.get()), NID_X25519);
     EXPECT_EQ(SSL_get_peer_signature_algorithm(client.get()),
               SSL_SIGN_RSA_PKCS1_SHA256);
     bssl::UniquePtr<X509> peer(SSL_get_peer_certificate(client.get()));
@@ -8716,6 +8717,20 @@ TEST(SSLTest, InvalidSignatureAlgorithm) {
       ctx.get(), kDuplicatePrefs, OPENSSL_ARRAY_SIZE(kDuplicatePrefs)));
 }
 
+TEST(SSLTest, InvalidGroups) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+
+  static const uint16_t kInvalidIDs[] = {1234};
+  EXPECT_FALSE(SSL_CTX_set1_group_ids(
+      ctx.get(), kInvalidIDs, OPENSSL_ARRAY_SIZE(kInvalidIDs)));
+
+  // This is a valid NID, but it is not a valid group.
+  static const int kInvalidNIDs[] = {NID_rsaEncryption};
+  EXPECT_FALSE(SSL_CTX_set1_groups(
+      ctx.get(), kInvalidNIDs, OPENSSL_ARRAY_SIZE(kInvalidNIDs)));
+}
+
 TEST(SSLTest, NameLists) {
   struct {
     size_t (*func)(const char **, size_t);
@@ -8726,7 +8741,7 @@ TEST(SSLTest, NameLists) {
        {"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_AES_128_GCM_SHA256"}},
       {SSL_get_all_cipher_names,
        {"ECDHE-ECDSA-AES128-GCM-SHA256", "TLS_AES_128_GCM_SHA256", "(NONE)"}},
-      {SSL_get_all_curve_names, {"P-256", "X25519"}},
+      {SSL_get_all_group_names, {"P-256", "X25519"}},
       {SSL_get_all_signature_algorithm_names,
        {"rsa_pkcs1_sha256", "ecdsa_secp256r1_sha256", "ecdsa_sha256"}},
   };
