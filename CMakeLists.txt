@@ -341,6 +341,7 @@ add_library(
   src/crypto/cpu_intel.c
   src/crypto/crypto.c
   src/crypto/curve25519/curve25519.c
+  src/crypto/curve25519/curve25519_64_adx.c
   src/crypto/curve25519/spake25519.c
   src/crypto/des/des.c
   src/crypto/dh_extra/dh_asn1.c
