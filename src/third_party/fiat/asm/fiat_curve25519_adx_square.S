@@ -1,8 +1,19 @@
+#if !defined(OPENSSL_NO_ASM) && defined(__x86_64__) && \
+    (defined(__APPLE__) || defined(__ELF__))
+
+#if defined(BORINGSSL_PREFIX)
+#include <boringssl_prefix_symbols_asm.h>
+#endif
+
+.intel_syntax noprefix
 .text
 #if defined(__APPLE__)
+.private_extern fiat_curve25519_adx_square
 .global _fiat_curve25519_adx_square
 _fiat_curve25519_adx_square:
 #else
+.type fiat_curve25519_adx_square, @function
+.hidden fiat_curve25519_adx_square
 .global fiat_curve25519_adx_square
 fiat_curve25519_adx_square:
 #endif
@@ -121,3 +132,12 @@ mov r15, [ rsp - 0x58 ]
 mov rbp, [rsp - 0x08]
 ret
 .cfi_endproc
+#if defined(__ELF__)
+.size fiat_curve25519_adx_square, .-fiat_curve25519_adx_square
+#endif
+
+#endif
+
+#if defined(__ELF__)
+.section	.note.GNU-stack,"",%progbits
+#endif

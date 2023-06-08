@@ -202,6 +202,8 @@ set(
   src/crypto/curve25519/asm/x25519-asm-arm.S
   src/crypto/hrss/asm/poly_rq_mul.S
   src/crypto/poly1305/poly1305_arm_asm.S
+  src/third_party/fiat/asm/fiat_curve25519_adx_mul.S
+  src/third_party/fiat/asm/fiat_curve25519_adx_square.S
   win-aarch64/crypto/chacha/chacha-armv8-win.S
   win-aarch64/crypto/cipher_extra/chacha20_poly1305_armv8-win.S
   win-aarch64/crypto/fipsmodule/aesv8-armv8-win.S
