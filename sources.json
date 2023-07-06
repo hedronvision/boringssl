@@ -140,6 +140,8 @@
     "src/crypto/rand_extra/deterministic.c", 
     "src/crypto/rand_extra/forkunsafe.c", 
     "src/crypto/rand_extra/fuchsia.c", 
+    "src/crypto/rand_extra/getentropy.c", 
+    "src/crypto/rand_extra/ios.c", 
     "src/crypto/rand_extra/passive.c", 
     "src/crypto/rand_extra/rand_extra.c", 
     "src/crypto/rand_extra/windows.c", 
@@ -745,8 +747,6 @@
     "src/crypto/self_test.cc", 
     "src/crypto/siphash/siphash_test.cc", 
     "src/crypto/stack/stack_test.cc", 
-    "src/crypto/test/abi_test.cc", 
-    "src/crypto/test/file_test_gtest.cc", 
     "src/crypto/test/gtest_main.cc", 
     "src/crypto/thread_test.cc", 
     "src/crypto/trust_token/trust_token_test.cc", 
@@ -1188,14 +1188,15 @@
     "src/ssl/internal.h"
   ], 
   "ssl_test": [
-    "src/crypto/test/abi_test.cc", 
     "src/crypto/test/gtest_main.cc", 
     "src/ssl/span_test.cc", 
     "src/ssl/ssl_c_test.c", 
     "src/ssl/ssl_test.cc"
   ], 
   "test_support": [
+    "src/crypto/test/abi_test.cc", 
     "src/crypto/test/file_test.cc", 
+    "src/crypto/test/file_test_gtest.cc", 
     "src/crypto/test/test_util.cc", 
     "src/crypto/test/wycheproof_util.cc"
   ], 

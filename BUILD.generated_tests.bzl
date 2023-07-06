@@ -48,9 +48,11 @@ test_support_sources = [
     "src/crypto/poly1305/internal.h",
     "src/crypto/pool/internal.h",
     "src/crypto/rsa_extra/internal.h",
+    "src/crypto/test/abi_test.cc",
     "src/crypto/test/abi_test.h",
     "src/crypto/test/file_test.cc",
     "src/crypto/test/file_test.h",
+    "src/crypto/test/file_test_gtest.cc",
     "src/crypto/test/gtest_main.h",
     "src/crypto/test/test_util.cc",
     "src/crypto/test/test_util.h",
@@ -140,8 +142,6 @@ crypto_test_sources = [
     "src/crypto/self_test.cc",
     "src/crypto/siphash/siphash_test.cc",
     "src/crypto/stack/stack_test.cc",
-    "src/crypto/test/abi_test.cc",
-    "src/crypto/test/file_test_gtest.cc",
     "src/crypto/test/gtest_main.cc",
     "src/crypto/thread_test.cc",
     "src/crypto/trust_token/trust_token_test.cc",
@@ -151,7 +151,6 @@ crypto_test_sources = [
 ]
 
 ssl_test_sources = [
-    "src/crypto/test/abi_test.cc",
     "src/crypto/test/gtest_main.cc",
     "src/ssl/span_test.cc",
     "src/ssl/ssl_c_test.c",

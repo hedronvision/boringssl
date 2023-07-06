@@ -414,6 +414,8 @@ crypto_sources = [
     "src/crypto/rand_extra/deterministic.c",
     "src/crypto/rand_extra/forkunsafe.c",
     "src/crypto/rand_extra/fuchsia.c",
+    "src/crypto/rand_extra/getentropy.c",
+    "src/crypto/rand_extra/ios.c",
     "src/crypto/rand_extra/passive.c",
     "src/crypto/rand_extra/rand_extra.c",
     "src/crypto/rand_extra/windows.c",
