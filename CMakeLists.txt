@@ -405,7 +405,6 @@ add_library(
   src/crypto/pool/pool.c
   src/crypto/rand_extra/deterministic.c
   src/crypto/rand_extra/forkunsafe.c
-  src/crypto/rand_extra/fuchsia.c
   src/crypto/rand_extra/getentropy.c
   src/crypto/rand_extra/ios.c
   src/crypto/rand_extra/passive.c
