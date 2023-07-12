@@ -143,6 +143,7 @@
     "src/crypto/rand_extra/ios.c", 
     "src/crypto/rand_extra/passive.c", 
     "src/crypto/rand_extra/rand_extra.c", 
+    "src/crypto/rand_extra/trusty.c", 
     "src/crypto/rand_extra/windows.c", 
     "src/crypto/rc4/rc4.c", 
     "src/crypto/refcount.c", 
@@ -544,6 +545,7 @@
     "src/crypto/fipsmodule/dh/internal.h", 
     "src/crypto/fipsmodule/digest/internal.h", 
     "src/crypto/fipsmodule/digest/md32_common.h", 
+    "src/crypto/fipsmodule/ec/builtin_curves.h", 
     "src/crypto/fipsmodule/ec/internal.h", 
     "src/crypto/fipsmodule/ec/p256-nistz-table.h", 
     "src/crypto/fipsmodule/ec/p256-nistz.h", 
@@ -746,6 +748,7 @@
     "src/crypto/self_test.cc", 
     "src/crypto/siphash/siphash_test.cc", 
     "src/crypto/stack/stack_test.cc", 
+    "src/crypto/test/file_test_gtest.cc", 
     "src/crypto/test/gtest_main.cc", 
     "src/crypto/thread_test.cc", 
     "src/crypto/trust_token/trust_token_test.cc", 
@@ -1195,7 +1198,6 @@
   "test_support": [
     "src/crypto/test/abi_test.cc", 
     "src/crypto/test/file_test.cc", 
-    "src/crypto/test/file_test_gtest.cc", 
     "src/crypto/test/test_util.cc", 
     "src/crypto/test/wycheproof_util.cc"
   ], 

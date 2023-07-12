@@ -16,13 +16,17 @@
 
 #include "../fipsmodule/rand/internal.h"
 
-#if defined(OPENSSL_RAND_IOS)
+#if defined(OPENSSL_RAND_TRUSTY)
+#include <stdint.h>
 #include <stdlib.h>
 
-#include <CommonCrypto/CommonRandom.h>
+#include <sys/types.h>
+#include <uapi/err.h>
+
+#include <lib/rng/trusty_rng.h>
 
 void CRYPTO_sysrand(uint8_t *out, size_t requested) {
-  if (CCRandomGenerateBytes(out, requested) != kCCSuccess) {
+  if (trusty_rng_hw_rand(out, requested) != NO_ERROR) {
     abort();
   }
 }
@@ -31,4 +35,4 @@ void CRYPTO_sysrand_for_seed(uint8_t *out, size_t requested) {
   CRYPTO_sysrand(out, requested);
 }
 
-#endif  // OPENSSL_RAND_IOS
+#endif  // OPENSSL_RAND_TRUSTY
