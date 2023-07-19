@@ -310,6 +310,7 @@ crypto_sources = [
     "src/crypto/bio/bio.c",
     "src/crypto/bio/bio_mem.c",
     "src/crypto/bio/connect.c",
+    "src/crypto/bio/errno.c",
     "src/crypto/bio/fd.c",
     "src/crypto/bio/file.c",
     "src/crypto/bio/hexdump.c",
