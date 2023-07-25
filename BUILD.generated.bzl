@@ -741,8 +741,6 @@ pki_internal_headers = [
     "src/pki/verify_certificate_chain_typed_unittest.h",
     "src/pki/verify_name_match.h",
     "src/pki/verify_signed_data.h",
-    "src/pki/x509_cert_types.h",
-    "src/pki/x509_certificate.h",
 ]
 
 pki_sources = [
