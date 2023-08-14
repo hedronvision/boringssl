@@ -69,7 +69,6 @@ test_support_sources = [
     "src/pki/cert_issuer_source.h",
     "src/pki/cert_issuer_source_static.h",
     "src/pki/cert_issuer_source_sync_unittest.h",
-    "src/pki/cert_net_fetcher.h",
     "src/pki/cert_status_flags.h",
     "src/pki/cert_status_flags_list.h",
     "src/pki/certificate_policies.h",
