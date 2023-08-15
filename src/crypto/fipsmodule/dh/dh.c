@@ -70,8 +70,6 @@
 #include "internal.h"
 
 
-#define OPENSSL_DH_MAX_MODULUS_BITS 10000
-
 DH *DH_new(void) {
   DH *dh = OPENSSL_malloc(sizeof(DH));
   if (dh == NULL) {
@@ -191,15 +189,14 @@ int DH_set_length(DH *dh, unsigned priv_length) {
 int DH_generate_key(DH *dh) {
   boringssl_ensure_ffdh_self_test();
 
+  if (!dh_check_params_fast(dh)) {
+    return 0;
+  }
+
   int ok = 0;
   int generate_new_key = 0;
   BN_CTX *ctx = NULL;
   BIGNUM *pub_key = NULL, *priv_key = NULL;
-
-  if (BN_num_bits(dh->p) > OPENSSL_DH_MAX_MODULUS_BITS) {
-    OPENSSL_PUT_ERROR(DH, DH_R_MODULUS_TOO_LARGE);
-    goto err;
-  }
 
   ctx = BN_CTX_new();
   if (ctx == NULL) {
@@ -232,7 +229,13 @@ int DH_generate_key(DH *dh) {
 
   if (generate_new_key) {
     if (dh->q) {
-      if (!BN_rand_range_ex(priv_key, 2, dh->q)) {
+      // Section 5.6.1.1.4 of SP 800-56A Rev3 generates a private key uniformly
+      // from [1, min(2^N-1, q-1)].
+      //
+      // Although SP 800-56A Rev3 now permits a private key length N,
+      // |dh->priv_length| historically was ignored when q is available. We
+      // continue to ignore it and interpret such a configuration as N = len(q).
+      if (!BN_rand_range_ex(priv_key, 1, dh->q)) {
         goto err;
       }
     } else {
@@ -279,8 +282,7 @@ err:
 
 static int dh_compute_key(DH *dh, BIGNUM *out_shared_key,
                           const BIGNUM *peers_key, BN_CTX *ctx) {
-  if (BN_num_bits(dh->p) > OPENSSL_DH_MAX_MODULUS_BITS) {
-    OPENSSL_PUT_ERROR(DH, DH_R_MODULUS_TOO_LARGE);
+  if (!dh_check_params_fast(dh)) {
     return 0;
   }
 

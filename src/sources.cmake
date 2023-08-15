@@ -587,6 +587,7 @@ set(
   pki/testdata/name_constraints_unittest/ipaddress-invalid_mask_not_contiguous_2.pem
   pki/testdata/name_constraints_unittest/ipaddress-invalid_mask_not_contiguous_3.pem
   pki/testdata/name_constraints_unittest/ipaddress-invalid_mask_not_contiguous_4.pem
+  pki/testdata/name_constraints_unittest/ipaddress-mapped_addrs.pem
   pki/testdata/name_constraints_unittest/ipaddress-permit_all.pem
   pki/testdata/name_constraints_unittest/ipaddress-permit_prefix1.pem
   pki/testdata/name_constraints_unittest/ipaddress-permit_prefix31.pem
@@ -1529,6 +1530,9 @@ set(
   pki/testdata/ssl/certificates/duplicate_cn_1.pem
   pki/testdata/ssl/certificates/duplicate_cn_2.p12
   pki/testdata/ssl/certificates/duplicate_cn_2.pem
+  pki/testdata/ssl/certificates/ec-prime256v1-1.key
+  pki/testdata/ssl/certificates/ec-prime256v1-2.key
+  pki/testdata/ssl/certificates/ec-prime256v1-3.key
   pki/testdata/ssl/certificates/eku-test-root.pem
   pki/testdata/ssl/certificates/ev_test.pem
   pki/testdata/ssl/certificates/ev_test_state_only.pem
@@ -1607,6 +1611,16 @@ set(
   pki/testdata/ssl/certificates/redundant-validated-chain-root.pem
   pki/testdata/ssl/certificates/redundant-validated-chain.pem
   pki/testdata/ssl/certificates/root_ca_cert.pem
+  pki/testdata/ssl/certificates/rsa-1024-1.key
+  pki/testdata/ssl/certificates/rsa-1024-2.key
+  pki/testdata/ssl/certificates/rsa-1024-3.key
+  pki/testdata/ssl/certificates/rsa-2048-1.key
+  pki/testdata/ssl/certificates/rsa-2048-2.key
+  pki/testdata/ssl/certificates/rsa-2048-3.key
+  pki/testdata/ssl/certificates/rsa-768-1.key
+  pki/testdata/ssl/certificates/rsa-768-2.key
+  pki/testdata/ssl/certificates/rsa-768-3.key
+  pki/testdata/ssl/certificates/rsa-8200-1.key
   pki/testdata/ssl/certificates/salesforce_com_test.pem
   pki/testdata/ssl/certificates/self-signed-invalid-name.pem
   pki/testdata/ssl/certificates/self-signed-invalid-sig.pem
