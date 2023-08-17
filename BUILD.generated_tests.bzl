@@ -229,6 +229,7 @@ pki_test_sources = [
     "src/pki/mock_signature_verify_cache.cc",
     "src/pki/name_constraints_unittest.cc",
     "src/pki/nist_pkits_unittest.cc",
+    "src/pki/ocsp_unittest.cc",
     "src/pki/parse_certificate_unittest.cc",
     "src/pki/parse_name_unittest.cc",
     "src/pki/parse_values_unittest.cc",
