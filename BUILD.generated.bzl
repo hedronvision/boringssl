@@ -697,7 +697,6 @@ pki_internal_headers = [
     "src/pki/encode_values.h",
     "src/pki/extended_key_usage.h",
     "src/pki/fillins/base64.h",
-    "src/pki/fillins/check.h",
     "src/pki/fillins/file_util.h",
     "src/pki/fillins/inet.h",
     "src/pki/fillins/ip_address.h",
