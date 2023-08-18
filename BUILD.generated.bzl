@@ -758,7 +758,6 @@ pki_sources = [
     "src/pki/input.cc",
     "src/pki/name_constraints.cc",
     "src/pki/ocsp.cc",
-    "src/pki/ocsp_revocation_status.h",
     "src/pki/ocsp_verify_result.cc",
     "src/pki/parse_certificate.cc",
     "src/pki/parse_name.cc",
