@@ -13,7 +13,7 @@ namespace bssl {
 
 namespace fillins {
 
-class OPENSSL_EXPORT FilePath {
+class FilePath {
  public:
   FilePath();
   FilePath(const std::string &path);
@@ -26,11 +26,11 @@ class OPENSSL_EXPORT FilePath {
   std::string path_;
 };
 
-enum OPENSSL_EXPORT PathKey {
+enum PathKey {
   DIR_SOURCE_ROOT = 0,
 };
 
-class OPENSSL_EXPORT PathService {
+class PathService {
  public:
   static void Get(PathKey key, FilePath *out);
 };
