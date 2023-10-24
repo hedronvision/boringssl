@@ -381,7 +381,7 @@ add_library(
   src/crypto/fipsmodule/fips_shared_support.c
   src/crypto/hpke/hpke.c
   src/crypto/hrss/hrss.c
-  src/crypto/kyber/keccak.c
+  src/crypto/keccak/keccak.c
   src/crypto/kyber/kyber.c
   src/crypto/lhash/lhash.c
   src/crypto/mem.c
