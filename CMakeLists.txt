@@ -418,6 +418,13 @@ add_library(
   src/crypto/rsa_extra/rsa_crypt.c
   src/crypto/rsa_extra/rsa_print.c
   src/crypto/siphash/siphash.c
+  src/crypto/spx/address.c
+  src/crypto/spx/fors.c
+  src/crypto/spx/merkle.c
+  src/crypto/spx/spx.c
+  src/crypto/spx/spx_util.c
+  src/crypto/spx/thash.c
+  src/crypto/spx/wots.c
   src/crypto/stack/stack.c
   src/crypto/thread.c
   src/crypto/thread_none.c
