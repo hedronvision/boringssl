@@ -190,9 +190,6 @@ static int crl_set_issuers(X509_CRL *crl) {
 static int crl_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
                   void *exarg) {
   X509_CRL *crl = (X509_CRL *)*pval;
-  STACK_OF(X509_EXTENSION) *exts;
-  X509_EXTENSION *ext;
-  size_t idx;
   int i;
 
   switch (operation) {
@@ -201,10 +198,7 @@ static int crl_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
       crl->akid = NULL;
       crl->flags = 0;
       crl->idp_flags = 0;
-      crl->idp_reasons = CRLDP_ALL_REASONS;
       crl->issuers = NULL;
-      crl->crl_number = NULL;
-      crl->base_crl_number = NULL;
       break;
 
     case ASN1_OP_D2I_POST: {
@@ -247,39 +241,17 @@ static int crl_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         return 0;
       }
 
-      crl->crl_number = X509_CRL_get_ext_d2i(crl, NID_crl_number, &i, NULL);
-      if (crl->crl_number == NULL && i != -1) {
-        return 0;
-      }
-
-      crl->base_crl_number = X509_CRL_get_ext_d2i(crl, NID_delta_crl, &i, NULL);
-      if (crl->base_crl_number == NULL && i != -1) {
-        return 0;
-      }
-      // Delta CRLs must have CRL number
-      if (crl->base_crl_number && !crl->crl_number) {
-        OPENSSL_PUT_ERROR(X509, X509_R_DELTA_CRL_WITHOUT_CRL_NUMBER);
-        return 0;
-      }
-
       // See if we have any unhandled critical CRL extensions and indicate
       // this in a flag. We only currently handle IDP so anything else
       // critical sets the flag. This code accesses the X509_CRL structure
       // directly: applications shouldn't do this.
-
-      exts = crl->crl->extensions;
-
-      for (idx = 0; idx < sk_X509_EXTENSION_num(exts); idx++) {
-        int nid;
-        ext = sk_X509_EXTENSION_value(exts, idx);
-        nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
-        if (nid == NID_freshest_crl) {
-          crl->flags |= EXFLAG_FRESHEST;
-        }
+      const STACK_OF(X509_EXTENSION) *exts = crl->crl->extensions;
+      for (size_t idx = 0; idx < sk_X509_EXTENSION_num(exts); idx++) {
+        const X509_EXTENSION *ext = sk_X509_EXTENSION_value(exts, idx);
+        int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
         if (X509_EXTENSION_get_critical(ext)) {
-          // We handle IDP and deltas
-          if ((nid == NID_issuing_distribution_point) ||
-              (nid == NID_authority_key_identifier) || (nid == NID_delta_crl)) {
+          if (nid == NID_issuing_distribution_point ||
+              nid == NID_authority_key_identifier) {
             continue;
           }
           crl->flags |= EXFLAG_CRITICAL;
@@ -297,8 +269,6 @@ static int crl_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
     case ASN1_OP_FREE_POST:
       AUTHORITY_KEYID_free(crl->akid);
       ISSUING_DIST_POINT_free(crl->idp);
-      ASN1_INTEGER_free(crl->crl_number);
-      ASN1_INTEGER_free(crl->base_crl_number);
       sk_GENERAL_NAMES_pop_free(crl->issuers, GENERAL_NAMES_free);
       break;
   }
@@ -334,13 +304,6 @@ static int setup_idp(X509_CRL *crl, ISSUING_DIST_POINT *idp) {
 
   if (idp->onlysomereasons) {
     crl->idp_flags |= IDP_REASONS;
-    if (idp->onlysomereasons->length > 0) {
-      crl->idp_reasons = idp->onlysomereasons->data[0];
-    }
-    if (idp->onlysomereasons->length > 1) {
-      crl->idp_reasons |= (idp->onlysomereasons->data[1] << 8);
-    }
-    crl->idp_reasons &= CRLDP_ALL_REASONS;
   }
 
   return DIST_POINT_set_dpname(idp->distpoint, X509_CRL_get_issuer(crl));
@@ -467,9 +430,6 @@ static int crl_lookup(X509_CRL *crl, X509_REVOKED **ret,
     if (crl_revoked_issuer_match(crl, issuer, rev)) {
       if (ret) {
         *ret = rev;
-      }
-      if (rev->reason == CRL_REASON_REMOVE_FROM_CRL) {
-        return 2;
       }
       return 1;
     }
