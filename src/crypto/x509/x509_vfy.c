@@ -77,41 +77,29 @@ static CRYPTO_EX_DATA_CLASS g_ex_data_class =
 // CRL score values
 
 // No unhandled critical extensions
-
 #define CRL_SCORE_NOCRITICAL 0x100
 
 // certificate is within CRL scope
-
 #define CRL_SCORE_SCOPE 0x080
 
 // CRL times valid
-
 #define CRL_SCORE_TIME 0x040
 
 // Issuer name matches certificate
-
 #define CRL_SCORE_ISSUER_NAME 0x020
 
 // If this score or above CRL is probably valid
-
 #define CRL_SCORE_VALID \
   (CRL_SCORE_NOCRITICAL | CRL_SCORE_TIME | CRL_SCORE_SCOPE)
 
 // CRL issuer is certificate issuer
-
 #define CRL_SCORE_ISSUER_CERT 0x018
 
 // CRL issuer is on certificate path
-
 #define CRL_SCORE_SAME_PATH 0x008
 
 // CRL issuer matches CRL AKID
-
 #define CRL_SCORE_AKID 0x004
-
-// Have a delta CRL with valid times
-
-#define CRL_SCORE_TIME_DELTA 0x002
 
 static int null_callback(int ok, X509_STORE_CTX *e);
 static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer);
@@ -124,13 +112,12 @@ static int check_revocation(X509_STORE_CTX *ctx);
 static int check_cert(X509_STORE_CTX *ctx);
 static int check_policy(X509_STORE_CTX *ctx);
 
-static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer,
-                         unsigned int *preasons, X509_CRL *crl, X509 *x);
+static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer, X509_CRL *crl,
+                         X509 *x);
 static int get_crl(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 *x);
 static void crl_akid_check(X509_STORE_CTX *ctx, X509_CRL *crl, X509 **pissuer,
                            int *pcrl_score);
-static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score,
-                           unsigned int *preasons);
+static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score);
 static int check_crl_path(X509_STORE_CTX *ctx, X509 *x);
 static int check_crl_chain(X509_STORE_CTX *ctx, STACK_OF(X509) *cert_path,
                            STACK_OF(X509) *crl_path);
@@ -826,49 +813,33 @@ static int check_revocation(X509_STORE_CTX *ctx) {
 
 static int check_cert(X509_STORE_CTX *ctx) {
   X509_CRL *crl = NULL;
-  X509 *x;
-  int ok = 0, cnum;
-  unsigned int last_reasons;
-  cnum = ctx->error_depth;
-  x = sk_X509_value(ctx->chain, cnum);
+  int ok = 0, cnum = ctx->error_depth;
+  X509 *x = sk_X509_value(ctx->chain, cnum);
   ctx->current_cert = x;
   ctx->current_issuer = NULL;
   ctx->current_crl_score = 0;
-  ctx->current_reasons = 0;
-  while (ctx->current_reasons != CRLDP_ALL_REASONS) {
-    last_reasons = ctx->current_reasons;
-    // Try to retrieve relevant CRL
-    if (ctx->get_crl) {
-      ok = ctx->get_crl(ctx, &crl, x);
-    } else {
-      ok = get_crl(ctx, &crl, x);
-    }
-    // If error looking up CRL, nothing we can do except notify callback
-    if (!ok) {
-      ctx->error = X509_V_ERR_UNABLE_TO_GET_CRL;
-      ok = ctx->verify_cb(0, ctx);
-      goto err;
-    }
-    ctx->current_crl = crl;
-    ok = ctx->check_crl(ctx, crl);
-    if (!ok) {
-      goto err;
-    }
 
-    ok = ctx->cert_crl(ctx, crl, x);
-    if (!ok) {
-      goto err;
-    }
+  // Try to retrieve relevant CRL
+  if (ctx->get_crl) {
+    ok = ctx->get_crl(ctx, &crl, x);
+  } else {
+    ok = get_crl(ctx, &crl, x);
+  }
+  // If error looking up CRL, nothing we can do except notify callback
+  if (!ok) {
+    ctx->error = X509_V_ERR_UNABLE_TO_GET_CRL;
+    ok = ctx->verify_cb(0, ctx);
+    goto err;
+  }
+  ctx->current_crl = crl;
+  ok = ctx->check_crl(ctx, crl);
+  if (!ok) {
+    goto err;
+  }
 
-    X509_CRL_free(crl);
-    crl = NULL;
-    // If reasons not updated we wont get anywhere by another iteration,
-    // so exit loop.
-    if (last_reasons == ctx->current_reasons) {
-      ctx->error = X509_V_ERR_UNABLE_TO_GET_CRL;
-      ok = ctx->verify_cb(0, ctx);
-      goto err;
-    }
+  ok = ctx->cert_crl(ctx, crl, x);
+  if (!ok) {
+    goto err;
   }
 
 err:
@@ -927,8 +898,7 @@ static int check_crl_time(X509_STORE_CTX *ctx, X509_CRL *crl, int notify) {
         return 0;
       }
     }
-    // Ignore expiry of base CRL is delta is valid
-    if ((i < 0) && !(ctx->current_crl_score & CRL_SCORE_TIME_DELTA)) {
+    if (i < 0) {
       if (!notify) {
         return 0;
       }
@@ -947,18 +917,15 @@ static int check_crl_time(X509_STORE_CTX *ctx, X509_CRL *crl, int notify) {
 }
 
 static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 **pissuer,
-                      int *pscore, unsigned *preasons,
-                      STACK_OF(X509_CRL) *crls) {
+                      int *pscore, STACK_OF(X509_CRL) *crls) {
   int crl_score, best_score = *pscore;
-  unsigned best_reasons = 0;
   X509 *x = ctx->current_cert;
   X509_CRL *best_crl = NULL;
   X509 *crl_issuer = NULL, *best_crl_issuer = NULL;
 
   for (size_t i = 0; i < sk_X509_CRL_num(crls); i++) {
     X509_CRL *crl = sk_X509_CRL_value(crls, i);
-    unsigned reasons = *preasons;
-    crl_score = get_crl_score(ctx, &crl_issuer, &reasons, crl, x);
+    crl_score = get_crl_score(ctx, &crl_issuer, crl, x);
     if (crl_score < best_score || crl_score == 0) {
       continue;
     }
@@ -978,7 +945,6 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 **pissuer,
     best_crl = crl;
     best_crl_issuer = crl_issuer;
     best_score = crl_score;
-    best_reasons = reasons;
   }
 
   if (best_crl) {
@@ -988,7 +954,6 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 **pissuer,
     *pcrl = best_crl;
     *pissuer = best_crl_issuer;
     *pscore = best_score;
-    *preasons = best_reasons;
     X509_CRL_up_ref(best_crl);
   }
 
@@ -1001,14 +966,10 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 **pissuer,
 
 // For a given CRL return how suitable it is for the supplied certificate
 // 'x'. The return value is a mask of several criteria. If the issuer is not
-// the certificate issuer this is returned in *pissuer. The reasons mask is
-// also used to determine if the CRL is suitable: if no new reasons the CRL
-// is rejected, otherwise reasons is updated.
-
-static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer,
-                         unsigned int *preasons, X509_CRL *crl, X509 *x) {
+// the certificate issuer this is returned in *pissuer.
+static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer, X509_CRL *crl,
+                         X509 *x) {
   int crl_score = 0;
-  unsigned int tmp_reasons = *preasons, crl_reasons;
 
   // First see if we can reject CRL straight away
 
@@ -1020,14 +981,11 @@ static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer,
   if (crl->idp_flags & (IDP_INDIRECT | IDP_REASONS)) {
     return 0;
   }
-  // If issuer name doesn't match certificate need indirect CRL
+  // We do not support indirect CRLs, so the issuer names must match.
   if (X509_NAME_cmp(X509_get_issuer_name(x), X509_CRL_get_issuer(crl))) {
-    if (!(crl->idp_flags & IDP_INDIRECT)) {
-      return 0;
-    }
-  } else {
-    crl_score |= CRL_SCORE_ISSUER_NAME;
+    return 0;
   }
+  crl_score |= CRL_SCORE_ISSUER_NAME;
 
   if (!(crl->flags & EXFLAG_CRITICAL)) {
     crl_score |= CRL_SCORE_NOCRITICAL;
@@ -1048,17 +1006,9 @@ static int get_crl_score(X509_STORE_CTX *ctx, X509 **pissuer,
   }
 
   // Check cert for matching CRL distribution points
-
-  if (crl_crldp_check(x, crl, crl_score, &crl_reasons)) {
-    // If no new reasons reject
-    if (!(crl_reasons & ~tmp_reasons)) {
-      return 0;
-    }
-    tmp_reasons |= crl_reasons;
+  if (crl_crldp_check(x, crl, crl_score)) {
     crl_score |= CRL_SCORE_SCOPE;
   }
-
-  *preasons = tmp_reasons;
 
   return crl_score;
 }
@@ -1076,11 +1026,9 @@ static void crl_akid_check(X509_STORE_CTX *ctx, X509_CRL *crl, X509 **pissuer,
   crl_issuer = sk_X509_value(ctx->chain, cidx);
 
   if (X509_check_akid(crl_issuer, crl->akid) == X509_V_OK) {
-    if (*pcrl_score & CRL_SCORE_ISSUER_NAME) {
-      *pcrl_score |= CRL_SCORE_AKID | CRL_SCORE_ISSUER_CERT;
-      *pissuer = crl_issuer;
-      return;
-    }
+    *pcrl_score |= CRL_SCORE_AKID | CRL_SCORE_ISSUER_CERT;
+    *pissuer = crl_issuer;
+    return;
   }
 
   for (cidx++; cidx < (int)sk_X509_num(ctx->chain); cidx++) {
@@ -1221,30 +1169,8 @@ static int idp_check_dp(DIST_POINT_NAME *a, DIST_POINT_NAME *b) {
   return 0;
 }
 
-static int crldp_check_crlissuer(DIST_POINT *dp, X509_CRL *crl, int crl_score) {
-  size_t i;
-  X509_NAME *nm = X509_CRL_get_issuer(crl);
-  // If no CRLissuer return is successful iff don't need a match
-  if (!dp->CRLissuer) {
-    return !!(crl_score & CRL_SCORE_ISSUER_NAME);
-  }
-  for (i = 0; i < sk_GENERAL_NAME_num(dp->CRLissuer); i++) {
-    GENERAL_NAME *gen = sk_GENERAL_NAME_value(dp->CRLissuer, i);
-    if (gen->type != GEN_DIRNAME) {
-      continue;
-    }
-    if (!X509_NAME_cmp(gen->d.directoryName, nm)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
 // Check CRLDP and IDP
-
-static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score,
-                           unsigned int *preasons) {
-  size_t i;
+static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score) {
   if (crl->idp_flags & IDP_ONLYATTR) {
     return 0;
   }
@@ -1257,21 +1183,28 @@ static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score,
       return 0;
     }
   }
-  *preasons = CRLDP_ALL_REASONS;
-  for (i = 0; i < sk_DIST_POINT_num(x->crldp); i++) {
+  for (size_t i = 0; i < sk_DIST_POINT_num(x->crldp); i++) {
     DIST_POINT *dp = sk_DIST_POINT_value(x->crldp, i);
-    if (crldp_check_crlissuer(dp, crl, crl_score)) {
-      if (!crl->idp || idp_check_dp(dp->distpoint, crl->idp->distpoint)) {
-        *preasons &= dp->dp_reasons;
-        return 1;
-      }
+    // Skip distribution points with a reasons field or a CRL issuer:
+    //
+    // We do not support CRLs partitioned by reason code. RFC 5280 requires CAs
+    // include at least one DistributionPoint that covers all reasons.
+    //
+    // We also do not support indirect CRLs, and a CRL issuer can only match
+    // indirect CRLs (RFC 5280, section 6.3.3, step b.1).
+    // support.
+    if (dp->reasons != NULL && dp->CRLissuer != NULL &&
+        (!crl->idp || idp_check_dp(dp->distpoint, crl->idp->distpoint))) {
+      return 1;
     }
   }
-  if ((!crl->idp || !crl->idp->distpoint) &&
-      (crl_score & CRL_SCORE_ISSUER_NAME)) {
-    return 1;
-  }
-  return 0;
+
+  // If the CRL does not specify an issuing distribution point, allow it to
+  // match anything.
+  //
+  // TODO(davidben): Does this match RFC 5280? It's hard to follow because RFC
+  // 5280 starts from distribution points, while this starts from CRLs.
+  return !crl->idp || !crl->idp->distpoint;
 }
 
 // Retrieve CRL corresponding to current certificate.
@@ -1279,13 +1212,10 @@ static int get_crl(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 *x) {
   int ok;
   X509 *issuer = NULL;
   int crl_score = 0;
-  unsigned int reasons;
   X509_CRL *crl = NULL;
   STACK_OF(X509_CRL) *skcrl;
   X509_NAME *nm = X509_get_issuer_name(x);
-  reasons = ctx->current_reasons;
-  ok = get_crl_sk(ctx, &crl, &issuer, &crl_score, &reasons, ctx->crls);
-
+  ok = get_crl_sk(ctx, &crl, &issuer, &crl_score, ctx->crls);
   if (ok) {
     goto done;
   }
@@ -1298,7 +1228,7 @@ static int get_crl(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 *x) {
     goto done;
   }
 
-  get_crl_sk(ctx, &crl, &issuer, &crl_score, &reasons, skcrl);
+  get_crl_sk(ctx, &crl, &issuer, &crl_score, skcrl);
 
   sk_X509_CRL_pop_free(skcrl, X509_CRL_free);
 
@@ -1308,7 +1238,6 @@ done:
   if (crl) {
     ctx->current_issuer = issuer;
     ctx->current_crl_score = crl_score;
-    ctx->current_reasons = reasons;
     *pcrl = crl;
     return 1;
   }
