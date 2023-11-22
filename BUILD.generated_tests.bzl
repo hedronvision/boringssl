@@ -89,7 +89,6 @@ test_support_sources = [
     "src/pki/fillins/fillins_base64.h",
     "src/pki/fillins/fillins_string_util.h",
     "src/pki/fillins/log.h",
-    "src/pki/fillins/net_errors.h",
     "src/pki/fillins/openssl_util.h",
     "src/pki/fillins/path_service.h",
     "src/pki/general_names.h",

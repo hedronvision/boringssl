@@ -472,9 +472,7 @@ add_library(
   src/crypto/x509/x_attrib.c
   src/crypto/x509/x_crl.c
   src/crypto/x509/x_exten.c
-  src/crypto/x509/x_info.c
   src/crypto/x509/x_name.c
-  src/crypto/x509/x_pkey.c
   src/crypto/x509/x_pubkey.c
   src/crypto/x509/x_req.c
   src/crypto/x509/x_sig.c
