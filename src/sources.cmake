@@ -358,7 +358,6 @@ set(
   pki/crl.cc
   pki/encode_values.cc
   pki/extended_key_usage.cc
-  pki/fillins/fillins_base64.cc
   pki/fillins/openssl_util.cc
   pki/general_names.cc
   pki/input.cc
@@ -395,8 +394,6 @@ set(
   pki/crl_unittest.cc
   pki/encode_values_unittest.cc
   pki/extended_key_usage_unittest.cc
-  pki/fillins/file_util.cc
-  pki/fillins/path_service.cc
   pki/general_names_unittest.cc
   pki/input_unittest.cc
   pki/ip_util_unittest.cc

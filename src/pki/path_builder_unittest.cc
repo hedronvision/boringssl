@@ -6,9 +6,6 @@
 
 #include <algorithm>
 
-#include "fillins/file_util.h"
-#include "fillins/path_service.h"
-
 #include "cert_error_params.h"
 #include "cert_issuer_source_static.h"
 #include "common_cert_errors.h"
