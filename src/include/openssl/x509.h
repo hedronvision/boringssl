@@ -487,7 +487,7 @@ OPENSSL_EXPORT int X509_add1_trust_object(X509 *x509, const ASN1_OBJECT *obj);
 // associated with an |X509_TRUST| object.
 OPENSSL_EXPORT int X509_add1_reject_object(X509 *x509, const ASN1_OBJECT *obj);
 
-// X509_reject_clear clears the list of OIDs for which |x509| is trusted. See
+// X509_trust_clear clears the list of OIDs for which |x509| is trusted. See
 // also |X509_add1_trust_object|.
 OPENSSL_EXPORT void X509_trust_clear(X509 *x509);
 
@@ -1902,8 +1902,8 @@ OPENSSL_EXPORT int i2d_NETSCAPE_SPKAC(const NETSCAPE_SPKAC *spkac,
 // discouraged. The parameters structure is very complex, and it takes more
 // bytes to merely encode parameters than an entire P-256 ECDSA signature.
 
-// An RSA_PSS_PARAMS represents a parsed RSASSA-PSS-params structure, as defined
-// in (RFC 4055).
+// An rsa_pss_params_st, aka |RSA_PSS_PARAMS|, represents a parsed
+// RSASSA-PSS-params structure, as defined in (RFC 4055).
 struct rsa_pss_params_st {
   X509_ALGOR *hashAlgorithm;
   X509_ALGOR *maskGenAlgorithm;
@@ -2582,6 +2582,21 @@ OPENSSL_EXPORT int X509_NAME_get_text_by_NID(const X509_NAME *name, int nid,
 OPENSSL_EXPORT X509_STORE_CTX *X509_STORE_CTX_get0_parent_ctx(
     X509_STORE_CTX *ctx);
 
+// X509_OBJECT_free_contents sets |obj| to the empty object, freeing any values
+// that were previously there.
+//
+// TODO(davidben): Unexport this function after rust-openssl is fixed to no
+// longer call it.
+OPENSSL_EXPORT void X509_OBJECT_free_contents(X509_OBJECT *obj);
+
+// X509_LOOKUP_free releases memory associated with |ctx|. This function should
+// never be used outside the library. No function in the public API hands
+// ownership of an |X509_LOOKUP| to the caller.
+//
+// TODO(davidben): Unexport this function after rust-openssl is fixed to no
+// longer call it.
+OPENSSL_EXPORT void X509_LOOKUP_free(X509_LOOKUP *ctx);
+
 
 // Private structures.
 
@@ -2723,6 +2738,7 @@ The X509_STORE then calls a function to actually verify the
 certificate chain.
 */
 
+#define X509_LU_NONE 0
 #define X509_LU_X509 1
 #define X509_LU_CRL 2
 #define X509_LU_PKEY 3
@@ -2894,16 +2910,21 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 #define X509_VP_FLAG_LOCKED 0x8
 #define X509_VP_FLAG_ONCE 0x10
 
-OPENSSL_EXPORT int X509_OBJECT_idx_by_subject(STACK_OF(X509_OBJECT) *h,
-                                              int type, X509_NAME *name);
-OPENSSL_EXPORT X509_OBJECT *X509_OBJECT_retrieve_by_subject(
-    STACK_OF(X509_OBJECT) *h, int type, X509_NAME *name);
-OPENSSL_EXPORT X509_OBJECT *X509_OBJECT_retrieve_match(STACK_OF(X509_OBJECT) *h,
-                                                       X509_OBJECT *x);
-OPENSSL_EXPORT int X509_OBJECT_up_ref_count(X509_OBJECT *a);
-OPENSSL_EXPORT void X509_OBJECT_free_contents(X509_OBJECT *a);
-OPENSSL_EXPORT int X509_OBJECT_get_type(const X509_OBJECT *a);
-OPENSSL_EXPORT X509 *X509_OBJECT_get0_X509(const X509_OBJECT *a);
+// X509_OBJECT_new returns a newly-allocated, empty |X509_OBJECT| or NULL on
+// error.
+OPENSSL_EXPORT X509_OBJECT *X509_OBJECT_new(void);
+
+// X509_OBJECT_free releases memory associated with |obj|.
+OPENSSL_EXPORT void X509_OBJECT_free(X509_OBJECT *obj);
+
+// X509_OBJECT_get_type returns the type of |obj|, which will be one of the
+// |X509_LU_*| constants.
+OPENSSL_EXPORT int X509_OBJECT_get_type(const X509_OBJECT *obj);
+
+// X509_OBJECT_get0_X509 returns |obj| as a certificate, or NULL if |obj| is not
+// a certificate.
+OPENSSL_EXPORT X509 *X509_OBJECT_get0_X509(const X509_OBJECT *obj);
+
 OPENSSL_EXPORT X509_STORE *X509_STORE_new(void);
 OPENSSL_EXPORT int X509_STORE_up_ref(X509_STORE *store);
 OPENSSL_EXPORT void X509_STORE_free(X509_STORE *v);
@@ -3026,13 +3047,6 @@ OPENSSL_EXPORT int X509_load_crl_file(X509_LOOKUP *ctx, const char *file,
                                       int type);
 OPENSSL_EXPORT int X509_load_cert_crl_file(X509_LOOKUP *ctx, const char *file,
                                            int type);
-
-OPENSSL_EXPORT X509_LOOKUP *X509_LOOKUP_new(X509_LOOKUP_METHOD *method);
-OPENSSL_EXPORT void X509_LOOKUP_free(X509_LOOKUP *ctx);
-OPENSSL_EXPORT int X509_LOOKUP_init(X509_LOOKUP *ctx);
-OPENSSL_EXPORT int X509_LOOKUP_by_subject(X509_LOOKUP *ctx, int type,
-                                          X509_NAME *name, X509_OBJECT *ret);
-OPENSSL_EXPORT int X509_LOOKUP_shutdown(X509_LOOKUP *ctx);
 
 OPENSSL_EXPORT int X509_STORE_load_locations(X509_STORE *ctx, const char *file,
                                              const char *dir);
