@@ -65,14 +65,14 @@
 
 static int by_file_ctrl(X509_LOOKUP *ctx, int cmd, const char *argc, long argl,
                         char **ret);
-static X509_LOOKUP_METHOD x509_file_lookup = {
+static const X509_LOOKUP_METHOD x509_file_lookup = {
     NULL,          // new
     NULL,          // free
     by_file_ctrl,  // ctrl
     NULL,          // get_by_subject
 };
 
-X509_LOOKUP_METHOD *X509_LOOKUP_file(void) { return &x509_file_lookup; }
+const X509_LOOKUP_METHOD *X509_LOOKUP_file(void) { return &x509_file_lookup; }
 
 static int by_file_ctrl(X509_LOOKUP *ctx, int cmd, const char *argp, long argl,
                         char **ret) {
@@ -262,4 +262,8 @@ int X509_load_cert_crl_file(X509_LOOKUP *ctx, const char *file, int type) {
 err:
   sk_X509_INFO_pop_free(inf, X509_INFO_free);
   return count;
+}
+
+int X509_LOOKUP_load_file(X509_LOOKUP *lookup, const char *name, int type) {
+  return X509_LOOKUP_ctrl(lookup, X509_L_FILE_LOAD, name, type, NULL);
 }
