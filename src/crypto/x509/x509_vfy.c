@@ -139,7 +139,7 @@ static X509 *lookup_cert_match(X509_STORE_CTX *ctx, X509 *x) {
   X509 *xtmp = NULL;
   size_t i;
   // Lookup all certs with matching subject name
-  certs = X509_STORE_get1_certs(ctx, X509_get_subject_name(x));
+  certs = X509_STORE_CTX_get1_certs(ctx, X509_get_subject_name(x));
   if (certs == NULL) {
     return NULL;
   }
@@ -1143,7 +1143,7 @@ static int get_crl(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509 *x) {
   }
 
   // Lookup CRLs from store
-  skcrl = X509_STORE_get1_crls(ctx, nm);
+  skcrl = X509_STORE_CTX_get1_crls(ctx, nm);
 
   // If no CRLs found and a near match from get_crl_sk use that
   if (!skcrl && crl) {
@@ -1717,11 +1717,9 @@ void X509_STORE_CTX_trusted_stack(X509_STORE_CTX *ctx, STACK_OF(X509) *sk) {
 }
 
 void X509_STORE_CTX_cleanup(X509_STORE_CTX *ctx) {
-  X509_VERIFY_PARAM_free(ctx->param);
-  ctx->param = NULL;
-  sk_X509_pop_free(ctx->chain, X509_free);
-  ctx->chain = NULL;
   CRYPTO_free_ex_data(&g_ex_data_class, ctx, &(ctx->ex_data));
+  X509_VERIFY_PARAM_free(ctx->param);
+  sk_X509_pop_free(ctx->chain, X509_free);
   OPENSSL_memset(ctx, 0, sizeof(X509_STORE_CTX));
 }
 

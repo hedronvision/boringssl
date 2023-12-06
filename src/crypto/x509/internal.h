@@ -274,7 +274,6 @@ DECLARE_ASN1_ITEM(X509_CRL)
 
 struct X509_VERIFY_PARAM_st {
   int64_t check_time;               // POSIX time to use
-  unsigned long inh_flags;          // Inheritance flags
   unsigned long flags;              // Various verify flags
   int purpose;                      // purpose to check untrusted certificates
   int trust;                        // trust setting to check
@@ -563,6 +562,10 @@ STACK_OF(CONF_VALUE) *X509V3_parse_list(const char *line);
 // This function is exported for testing.
 OPENSSL_EXPORT int GENERAL_NAME_cmp(const GENERAL_NAME *a,
                                     const GENERAL_NAME *b);
+
+// X509_VERIFY_PARAM_lookup returns a pre-defined |X509_VERIFY_PARAM| named by
+// |name|, or NULL if no such name is defined.
+const X509_VERIFY_PARAM *X509_VERIFY_PARAM_lookup(const char *name);
 
 
 #if defined(__cplusplus)
