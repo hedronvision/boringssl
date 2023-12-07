@@ -1198,7 +1198,7 @@ static int check_crl(X509_STORE_CTX *ctx, X509_CRL *crl) {
   if (issuer) {
     // Check for cRLSign bit if keyUsage present
     if ((issuer->ex_flags & EXFLAG_KUSAGE) &&
-        !(issuer->ex_kusage & KU_CRL_SIGN)) {
+        !(issuer->ex_kusage & X509v3_KU_CRL_SIGN)) {
       ctx->error = X509_V_ERR_KEYUSAGE_NO_CRL_SIGN;
       ok = ctx->verify_cb(0, ctx);
       if (!ok) {
@@ -1588,13 +1588,12 @@ int X509_STORE_CTX_purpose_inherit(X509_STORE_CTX *ctx, int def_purpose,
   }
   // If we have a purpose then check it is valid
   if (purpose) {
-    X509_PURPOSE *ptmp;
     idx = X509_PURPOSE_get_by_id(purpose);
     if (idx == -1) {
       OPENSSL_PUT_ERROR(X509, X509_R_UNKNOWN_PURPOSE_ID);
       return 0;
     }
-    ptmp = X509_PURPOSE_get0(idx);
+    const X509_PURPOSE *ptmp = X509_PURPOSE_get0(idx);
     if (ptmp->trust == X509_TRUST_DEFAULT) {
       idx = X509_PURPOSE_get_by_id(def_purpose);
       if (idx == -1) {

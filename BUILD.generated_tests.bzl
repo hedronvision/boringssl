@@ -245,6 +245,7 @@ pki_test_sources = [
     "src/pki/string_util_unittest.cc",
     "src/pki/test_helpers.cc",
     "src/pki/trust_store_collection_unittest.cc",
+    "src/pki/trust_store_in_memory_unittest.cc",
     "src/pki/verify_certificate_chain_pkits_unittest.cc",
     "src/pki/verify_certificate_chain_unittest.cc",
     "src/pki/verify_name_match_unittest.cc",
