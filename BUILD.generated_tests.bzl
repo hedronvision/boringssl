@@ -108,7 +108,6 @@ test_support_sources = [
     "src/pki/tag.h",
     "src/pki/test_helpers.h",
     "src/pki/testdata/nist-pkits/pkits_testcases-inl.h",
-    "src/pki/testdata/test_certificate_data.h",
     "src/pki/trust_store.h",
     "src/pki/trust_store_collection.h",
     "src/pki/trust_store_in_memory.h",
