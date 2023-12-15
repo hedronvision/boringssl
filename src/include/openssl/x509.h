@@ -2101,20 +2101,20 @@ OPENSSL_EXPORT int X509_ATTRIBUTE_set1_object(X509_ATTRIBUTE *attr,
 // X509_ATTRIBUTE_set1_data appends a value to |attr|'s value set and returns
 // one on success or zero on error. The value is determined as follows:
 //
-// If |attrtype| is a |MBSTRING_*| constant, the value is an ASN.1 string. The
-// string is determined by decoding |len| bytes from |data| in the encoding
-// specified by |attrtype|, and then re-encoding it in a form appropriate for
-// |attr|'s type. If |len| is -1, |strlen(data)| is used instead. See
-// |ASN1_STRING_set_by_NID| for details.
+// If |attrtype| is zero, this function returns one and does nothing. This form
+// may be used when calling |X509_ATTRIBUTE_create_by_*| to create an attribute
+// with an empty value set. Such attributes are invalid, but OpenSSL supports
+// creating them.
+//
+// Otherwise, if |attrtype| is a |MBSTRING_*| constant, the value is an ASN.1
+// string. The string is determined by decoding |len| bytes from |data| in the
+// encoding specified by |attrtype|, and then re-encoding it in a form
+// appropriate for |attr|'s type. If |len| is -1, |strlen(data)| is used
+// instead. See |ASN1_STRING_set_by_NID| for details.
 //
 // Otherwise, if |len| is not -1, the value is an ASN.1 string. |attrtype| is an
 // |ASN1_STRING| type value and the |len| bytes from |data| are copied as the
 // type-specific representation of |ASN1_STRING|. See |ASN1_STRING| for details.
-//
-// WARNING: If this form is used to construct a negative INTEGER or ENUMERATED,
-// |attrtype| includes the |V_ASN1_NEG| flag for |ASN1_STRING|, but the function
-// forgets to clear the flag for |ASN1_TYPE|. This matches OpenSSL but is
-// probably a bug. For now, do not use this form with negative values.
 //
 // Otherwise, if |len| is -1, the value is constructed by passing |attrtype| and
 // |data| to |ASN1_TYPE_set1|. That is, |attrtype| is an |ASN1_TYPE| type value,
@@ -3522,8 +3522,14 @@ typedef int (*X509_STORE_CTX_get_crl_fn)(X509_STORE_CTX *ctx, X509_CRL **crl,
                                          X509 *x);
 typedef int (*X509_STORE_CTX_check_crl_fn)(X509_STORE_CTX *ctx, X509_CRL *crl);
 
+// X509_STORE_set_depth configures |store| to, by default, limit certificate
+// chains to |depth| intermediate certificates. This count excludes both the
+// target certificate and the trust anchor (root certificate).
 OPENSSL_EXPORT int X509_STORE_set_depth(X509_STORE *store, int depth);
 
+// X509_STORE_CTX_set_depth configures |ctx| to, by default, limit certificate
+// chains to |depth| intermediate certificates. This count excludes both the
+// target certificate and the trust anchor (root certificate).
 OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 
 #define X509_STORE_CTX_set_app_data(ctx, data) \
@@ -3734,14 +3740,12 @@ OPENSSL_EXPORT int X509_STORE_set1_param(X509_STORE *store,
 //
 // As of writing these late defaults are a depth limit (see
 // |X509_VERIFY_PARAM_set_depth|) and the |X509_V_FLAG_TRUSTED_FIRST| flag. This
-// warning does not apply if the parameters were set in |store|. That is,
-// callers may safely set a concrete depth limit in |store|, but unlimited depth
-// must be configured at |X509_STORE_CTX|.
+// warning does not apply if the parameters were set in |store|.
 //
 // TODO(crbug.com/boringssl/441): This behavior is very surprising. Can we
-// remove this notion of late defaults? A depth limit of 100 can probably be
-// applied unconditionally. |X509_V_FLAG_TRUSTED_FIRST| is mostly a workaround
-// for poor path-building.
+// remove this notion of late defaults? The unsettable value at |X509_STORE| is
+// -1, which rejects everything but explicitly-trusted self-signed certificates.
+// |X509_V_FLAG_TRUSTED_FIRST| is mostly a workaround for poor path-building.
 OPENSSL_EXPORT X509_VERIFY_PARAM *X509_STORE_get0_param(X509_STORE *store);
 
 // X509_STORE_set_verify_cb acts like |X509_STORE_CTX_set_verify_cb| but sets
@@ -3963,6 +3967,10 @@ OPENSSL_EXPORT int X509_VERIFY_PARAM_set_purpose(X509_VERIFY_PARAM *param,
                                                  int purpose);
 OPENSSL_EXPORT int X509_VERIFY_PARAM_set_trust(X509_VERIFY_PARAM *param,
                                                int trust);
+
+// X509_VERIFY_PARAM_set_depth configures |param| to limit certificate chains to
+// |depth| intermediate certificates. This count excludes both the target
+// certificate and the trust anchor (root certificate).
 OPENSSL_EXPORT void X509_VERIFY_PARAM_set_depth(X509_VERIFY_PARAM *param,
                                                 int depth);
 
@@ -4043,6 +4051,8 @@ OPENSSL_EXPORT int X509_VERIFY_PARAM_set1_ip(X509_VERIFY_PARAM *param,
 OPENSSL_EXPORT int X509_VERIFY_PARAM_set1_ip_asc(X509_VERIFY_PARAM *param,
                                                  const char *ipasc);
 
+// X509_VERIFY_PARAM_get_depth returns the maximum depth configured in |param|.
+// See |X509_VERIFY_PARAM_set_depth|.
 OPENSSL_EXPORT int X509_VERIFY_PARAM_get_depth(const X509_VERIFY_PARAM *param);
 
 typedef void *(*X509V3_EXT_NEW)(void);
