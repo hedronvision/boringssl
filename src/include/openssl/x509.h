@@ -3524,8 +3524,6 @@ certificate chain.
 DEFINE_STACK_OF(X509_OBJECT)
 
 typedef int (*X509_STORE_CTX_verify_cb)(int, X509_STORE_CTX *);
-typedef int (*X509_STORE_CTX_get_issuer_fn)(X509 **issuer, X509_STORE_CTX *ctx,
-                                            X509 *x);
 typedef int (*X509_STORE_CTX_get_crl_fn)(X509_STORE_CTX *ctx, X509_CRL **crl,
                                          X509 *x);
 typedef int (*X509_STORE_CTX_check_crl_fn)(X509_STORE_CTX *ctx, X509_CRL *crl);
@@ -3764,20 +3762,10 @@ OPENSSL_EXPORT void X509_STORE_set_verify_cb(
     X509_STORE *ctx, X509_STORE_CTX_verify_cb verify_cb);
 #define X509_STORE_set_verify_cb_func(ctx, func) \
   X509_STORE_set_verify_cb((ctx), (func))
-OPENSSL_EXPORT X509_STORE_CTX_verify_cb
-X509_STORE_get_verify_cb(X509_STORE *ctx);
-OPENSSL_EXPORT void X509_STORE_set_get_issuer(
-    X509_STORE *ctx, X509_STORE_CTX_get_issuer_fn get_issuer);
-OPENSSL_EXPORT X509_STORE_CTX_get_issuer_fn
-X509_STORE_get_get_issuer(X509_STORE *ctx);
 OPENSSL_EXPORT void X509_STORE_set_get_crl(X509_STORE *ctx,
                                            X509_STORE_CTX_get_crl_fn get_crl);
-OPENSSL_EXPORT X509_STORE_CTX_get_crl_fn
-X509_STORE_get_get_crl(X509_STORE *ctx);
 OPENSSL_EXPORT void X509_STORE_set_check_crl(
     X509_STORE *ctx, X509_STORE_CTX_check_crl_fn check_crl);
-OPENSSL_EXPORT X509_STORE_CTX_check_crl_fn
-X509_STORE_get_check_crl(X509_STORE *ctx);
 
 // X509_STORE_CTX_new returns a newly-allocated, empty |X509_STORE_CTX|, or NULL
 // on error.
@@ -3801,7 +3789,9 @@ OPENSSL_EXPORT int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store,
                                        X509 *x509, STACK_OF(X509) *chain);
 
 // X509_STORE_CTX_set0_trusted_stack configures |ctx| to trust the certificates
-// in |sk|. |sk| must remain valid for the duration of |ctx|.
+// in |sk|. |sk| must remain valid for the duration of |ctx|. Calling this
+// function causes |ctx| to ignore any certificates configured in the
+// |X509_STORE|.
 //
 // WARNING: This function differs from most |set0| functions in that it does not
 // take ownership of its input. The caller is required to ensure the lifetimes
