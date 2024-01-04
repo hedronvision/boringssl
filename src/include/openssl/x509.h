@@ -3071,6 +3071,19 @@ OPENSSL_EXPORT int X509_check_ip(const X509 *x509, const uint8_t *chk,
 OPENSSL_EXPORT int X509_check_ip_asc(const X509 *x509, const char *ipasc,
                                      unsigned int flags);
 
+// X509_STORE_CTX_get1_issuer looks up a candidate trusted issuer for |x509| out
+// of |ctx|'s |X509_STORE|, based on the criteria in |X509_check_issued|. If one
+// was found, it returns one and sets |*out_issuer| to the issuer. The caller
+// must release |*out_issuer| with |X509_free| when done. If none was found, it
+// returns zero and leaves |*out_issuer| unchanged.
+//
+// This function only searches for trusted issuers. It does not consider
+// untrusted intermediates passed in to |X509_STORE_CTX_init|.
+//
+// TODO(crbug.com/boringssl/407): |x509| should be const.
+OPENSSL_EXPORT int X509_STORE_CTX_get1_issuer(X509 **out_issuer,
+                                              X509_STORE_CTX *ctx, X509 *x509);
+
 
 // X.509 information.
 //
@@ -3681,7 +3694,7 @@ OPENSSL_EXPORT int X509_LOOKUP_add_dir(X509_LOOKUP *lookup, const char *path,
 #define X509_V_FLAG_INHIBIT_ANY 0x200
 // Policy variable inhibit-policy-mapping
 #define X509_V_FLAG_INHIBIT_MAP 0x400
-// Notify callback that policy is OK
+// Does nothing
 #define X509_V_FLAG_NOTIFY_POLICY 0x800
 // Causes all verifications to fail. Extended CRL features have been removed.
 #define X509_V_FLAG_EXTENDED_CRL_SUPPORT 0x1000
@@ -3787,9 +3800,6 @@ OPENSSL_EXPORT void X509_STORE_set_check_crl(
 // on error.
 OPENSSL_EXPORT X509_STORE_CTX *X509_STORE_CTX_new(void);
 
-OPENSSL_EXPORT int X509_STORE_CTX_get1_issuer(X509 **issuer,
-                                              X509_STORE_CTX *ctx, X509 *x);
-
 // X509_STORE_CTX_free releases memory associated with |ctx|.
 OPENSSL_EXPORT void X509_STORE_CTX_free(X509_STORE_CTX *ctx);
 
@@ -3857,7 +3867,6 @@ OPENSSL_EXPORT int X509_STORE_CTX_get_error(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT void X509_STORE_CTX_set_error(X509_STORE_CTX *ctx, int s);
 OPENSSL_EXPORT int X509_STORE_CTX_get_error_depth(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT X509 *X509_STORE_CTX_get_current_cert(X509_STORE_CTX *ctx);
-OPENSSL_EXPORT X509 *X509_STORE_CTX_get0_current_issuer(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT X509_CRL *X509_STORE_CTX_get0_current_crl(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT STACK_OF(X509) *X509_STORE_CTX_get_chain(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT STACK_OF(X509) *X509_STORE_CTX_get0_chain(X509_STORE_CTX *ctx);
