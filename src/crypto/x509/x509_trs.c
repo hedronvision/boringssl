@@ -54,6 +54,9 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
+#include <assert.h>
+#include <limits.h>
+
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
@@ -64,14 +67,9 @@
 
 
 static int trust_1oidany(const X509_TRUST *trust, X509 *x, int flags);
-static int trust_1oid(const X509_TRUST *trust, X509 *x, int flags);
 static int trust_compat(const X509_TRUST *trust, X509 *x, int flags);
 
 static int obj_trust(int id, X509 *x, int flags);
-
-// WARNING: the following table should be kept in order of trust and without
-// any gaps so we can just subtract the minimum trust value to get an index
-// into the table
 
 static const X509_TRUST trstandard[] = {
     {X509_TRUST_COMPAT, 0, trust_compat, (char *)"compatible", 0, NULL},
@@ -83,10 +81,6 @@ static const X509_TRUST trstandard[] = {
      NID_email_protect, NULL},
     {X509_TRUST_OBJECT_SIGN, 0, trust_1oidany, (char *)"Object Signer",
      NID_code_sign, NULL},
-    {X509_TRUST_OCSP_SIGN, 0, trust_1oid, (char *)"OCSP responder",
-     NID_OCSP_sign, NULL},
-    {X509_TRUST_OCSP_REQUEST, 0, trust_1oid, (char *)"OCSP request",
-     NID_ad_OCSP, NULL},
     {X509_TRUST_TSA, 0, trust_1oidany, (char *)"TSA server", NID_time_stamp,
      NULL}};
 
@@ -122,8 +116,12 @@ const X509_TRUST *X509_TRUST_get0(int idx) {
 }
 
 int X509_TRUST_get_by_id(int id) {
-  if (id >= X509_TRUST_MIN && id <= X509_TRUST_MAX) {
-    return id - X509_TRUST_MIN;
+  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(trstandard); i++) {
+    if (trstandard[i].trust == id) {
+      static_assert(OPENSSL_ARRAY_SIZE(trstandard) <= INT_MAX,
+                    "indices must fit in int");
+      return (int)i;
+    }
   }
   return -1;
 }
@@ -150,13 +148,6 @@ static int trust_1oidany(const X509_TRUST *trust, X509 *x, int flags) {
   // we don't have any trust settings: for compatibility we return trusted
   // if it is self signed
   return trust_compat(trust, x, flags);
-}
-
-static int trust_1oid(const X509_TRUST *trust, X509 *x, int flags) {
-  if (x->aux) {
-    return obj_trust(trust->arg1, x, flags);
-  }
-  return X509_TRUST_UNTRUSTED;
 }
 
 static int trust_compat(const X509_TRUST *trust, X509 *x, int flags) {

@@ -54,8 +54,8 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
-#include <stdio.h>
-
+#include <assert.h>
+#include <limits.h>
 #include <string.h>
 
 #include <openssl/digest.h>
@@ -118,24 +118,21 @@ static const X509_PURPOSE xstandard[] = {
      (char *)"timestampsign", NULL},
 };
 
-// As much as I'd like to make X509_check_purpose use a "const" X509* I
-// really can't because it does recalculate hashes and do other non-const
-// things.
 int X509_check_purpose(X509 *x, int id, int ca) {
-  int idx;
-  const X509_PURPOSE *pt;
+  // This differs from OpenSSL, which uses -1 to indicate a fatal error and 0 to
+  // indicate an invalid certificate. BoringSSL uses 0 for both.
   if (!x509v3_cache_extensions(x)) {
-    return -1;
+    return 0;
   }
 
   if (id == -1) {
     return 1;
   }
-  idx = X509_PURPOSE_get_by_id(id);
+  int idx = X509_PURPOSE_get_by_id(id);
   if (idx == -1) {
-    return -1;
+    return 0;
   }
-  pt = X509_PURPOSE_get0(idx);
+  const X509_PURPOSE *pt = X509_PURPOSE_get0(idx);
   return pt->check_purpose(pt, x, ca);
 }
 
@@ -169,8 +166,12 @@ int X509_PURPOSE_get_by_sname(const char *sname) {
 }
 
 int X509_PURPOSE_get_by_id(int purpose) {
-  if (purpose >= X509_PURPOSE_MIN && purpose <= X509_PURPOSE_MAX) {
-    return purpose - X509_PURPOSE_MIN;
+  for (size_t i = 0; i <OPENSSL_ARRAY_SIZE(xstandard); i++) {
+    if (xstandard[i].purpose == purpose) {
+      static_assert(OPENSSL_ARRAY_SIZE(xstandard) <= INT_MAX,
+                    "indices must fit in int");
+      return (int)i;
+    }
   }
   return -1;
 }
