@@ -781,6 +781,32 @@ pki_sources = [
     "src/pki/verify_signed_data.cc",
 ]
 
+rust_bssl_sys = [
+    "src/rust/bssl-sys/src/lib.rs",
+]
+
+rust_bssl_crypto = [
+    "src/rust/bssl-crypto/src/aead.rs",
+    "src/rust/bssl-crypto/src/aes.rs",
+    "src/rust/bssl-crypto/src/bn.rs",
+    "src/rust/bssl-crypto/src/cipher/aes_cbc.rs",
+    "src/rust/bssl-crypto/src/cipher/aes_ctr.rs",
+    "src/rust/bssl-crypto/src/cipher/mod.rs",
+    "src/rust/bssl-crypto/src/digest.rs",
+    "src/rust/bssl-crypto/src/ec.rs",
+    "src/rust/bssl-crypto/src/ecdh.rs",
+    "src/rust/bssl-crypto/src/ed25519.rs",
+    "src/rust/bssl-crypto/src/hkdf.rs",
+    "src/rust/bssl-crypto/src/hmac.rs",
+    "src/rust/bssl-crypto/src/lib.rs",
+    "src/rust/bssl-crypto/src/macros.rs",
+    "src/rust/bssl-crypto/src/mem.rs",
+    "src/rust/bssl-crypto/src/pkey.rs",
+    "src/rust/bssl-crypto/src/rand.rs",
+    "src/rust/bssl-crypto/src/test_helpers.rs",
+    "src/rust/bssl-crypto/src/x25519.rs",
+]
+
 tool_sources = [
     "src/tool/args.cc",
     "src/tool/ciphers.cc",
