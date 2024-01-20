@@ -24,50 +24,42 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 //! Rust BoringSSL bindings
-extern crate alloc;
 
+extern crate alloc;
 extern crate core;
 
+use alloc::vec::Vec;
 use core::ffi::c_void;
 
 #[macro_use]
 mod macros;
 
-/// Authenticated Encryption with Additional Data algorithms.
 pub mod aead;
-
-/// AES block operations.
 pub mod aes;
 
 /// Ciphers.
 pub mod cipher;
 
 pub mod digest;
-
-/// Ed25519, a signature scheme.
+pub mod ec;
+pub mod ecdh;
+pub mod ecdsa;
 pub mod ed25519;
-
 pub mod hkdf;
-
 pub mod hmac;
-
-/// Random number generation.
-pub mod rand;
-
+pub mod rsa;
 pub mod x25519;
 
-/// Memory-manipulation operations.
-pub mod mem;
-
-/// Elliptic curve diffie-hellman operations.
-pub mod ecdh;
-
-pub(crate) mod bn;
-pub(crate) mod ec;
-pub(crate) mod pkey;
+mod scoped;
 
 #[cfg(test)]
 mod test_helpers;
+
+mod mem;
+pub use mem::constant_time_compare;
+
+mod rand;
+pub use rand::{rand_array, rand_bytes};
 
 /// Error type for when a "signature" (either a public-key signature or a MAC)
 /// is incorrect.
@@ -266,6 +258,24 @@ where
     unsafe { out_uninit.assume_init() }
 }
 
+/// Returns a BoringSSL structure that is initialized by some function.
+/// Requires that the given function completely initializes the value or else
+/// returns false.
+///
+/// (Tagged `unsafe` because a no-op argument would otherwise expose
+/// uninitialized memory.)
+unsafe fn initialized_struct_fallible<T, F>(init: F) -> Option<T>
+where
+    F: FnOnce(*mut T) -> bool,
+{
+    let mut out_uninit = core::mem::MaybeUninit::<T>::uninit();
+    if init(out_uninit.as_mut_ptr()) {
+        Some(unsafe { out_uninit.assume_init() })
+    } else {
+        None
+    }
+}
+
 /// Wrap a closure that initializes an output buffer and return that buffer as
 /// an array. Requires that the closure fully initialize the given buffer.
 ///
@@ -294,7 +304,7 @@ where
 /// Safety: the closure must fully initialize the array if it returns one.
 unsafe fn with_output_array_fallible<const N: usize, F>(func: F) -> Option<[u8; N]>
 where
-    F: FnOnce(*mut u8, usize) -> core::ffi::c_int,
+    F: FnOnce(*mut u8, usize) -> bool,
 {
     let mut out_uninit = core::mem::MaybeUninit::<[u8; N]>::uninit();
     let out_ptr = if N != 0 {
@@ -302,12 +312,129 @@ where
     } else {
         core::ptr::null_mut()
     };
-    if func(out_ptr, N) == 1 {
+    if func(out_ptr, N) {
         // Safety: `func` promises to fill all of `out_uninit` if it returns one.
         unsafe { Some(out_uninit.assume_init()) }
     } else {
         None
     }
+}
+
+/// Wrap a closure that writes at most `max_output` bytes to fill a vector.
+/// It must return the number of bytes written.
+#[allow(clippy::unwrap_used)]
+unsafe fn with_output_vec<F>(max_output: usize, func: F) -> Vec<u8>
+where
+    F: FnOnce(*mut u8) -> usize,
+{
+    unsafe {
+        with_output_vec_fallible(max_output, |out_buf| Some(func(out_buf)))
+            // The closure cannot fail and thus neither can
+            // `with_output_array_fallible`.
+            .unwrap()
+    }
+}
+
+/// Wrap a closure that writes at most `max_output` bytes to fill a vector.
+/// If successful, it must return the number of bytes written.
+unsafe fn with_output_vec_fallible<F>(max_output: usize, func: F) -> Option<Vec<u8>>
+where
+    F: FnOnce(*mut u8) -> Option<usize>,
+{
+    let mut ret = Vec::with_capacity(max_output);
+    let out = ret.spare_capacity_mut();
+    let out_buf = out
+        .get_mut(0)
+        .map_or(core::ptr::null_mut(), |x| x.as_mut_ptr());
+
+    let num_written = func(out_buf)?;
+    assert!(num_written <= ret.capacity());
+
+    unsafe {
+        // Safety: `num_written` bytes have been written to.
+        ret.set_len(num_written);
+    }
+
+    Some(ret)
+}
+
+/// Buffer represents an owned chunk of memory on the BoringSSL heap.
+/// Call `as_ref()` to get a `&[u8]` from it.
+pub struct Buffer {
+    // This pointer is always allocated by BoringSSL and must be freed using
+    // `OPENSSL_free`.
+    pub(crate) ptr: *mut u8,
+    pub(crate) len: usize,
+}
+
+impl AsRef<[u8]> for Buffer {
+    fn as_ref(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        // Safety: `ptr` and `len` describe a valid area of memory and `ptr`
+        // must be Rust-valid because `len` is non-zero.
+        unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        // Safety: `ptr` is owned by this object and is on the BoringSSL heap.
+        unsafe {
+            bssl_sys::OPENSSL_free(self.ptr as *mut core::ffi::c_void);
+        }
+    }
+}
+
+/// Calls `parse_func` with a `CBS` structure pointing at `data`.
+/// If that returns a null pointer then it returns [None].
+/// Otherwise, if there's still data left in CBS, it calls `free_func` on the
+/// pointer and returns [None]. Otherwise it returns the pointer.
+fn parse_with_cbs<T, Parse, Free>(data: &[u8], free_func: Free, parse_func: Parse) -> Option<*mut T>
+where
+    Parse: FnOnce(*mut bssl_sys::CBS) -> *mut T,
+    Free: FnOnce(*mut T),
+{
+    // Safety: type checking ensures that `cbs` is the correct size.
+    let mut cbs =
+        unsafe { initialized_struct(|cbs| bssl_sys::CBS_init(cbs, data.as_ffi_ptr(), data.len())) };
+    let ptr = parse_func(&mut cbs);
+    if ptr.is_null() {
+        return None;
+    }
+    // Safety: `cbs` is still valid after parsing.
+    if unsafe { bssl_sys::CBS_len(&cbs) } != 0 {
+        // Safety: `ptr` is still owned by this function.
+        free_func(ptr);
+        return None;
+    }
+    Some(ptr)
+}
+
+/// Calls `func` with a `CBB` pointer and returns a [Buffer] of the ultimate
+/// contents of that CBB.
+#[allow(clippy::unwrap_used)]
+fn cbb_to_buffer<F: FnOnce(*mut bssl_sys::CBB)>(initial_capacity: usize, func: F) -> Buffer {
+    // Safety: type checking ensures that `cbb` is the correct size.
+    let mut cbb = unsafe {
+        initialized_struct_fallible(|cbb| bssl_sys::CBB_init(cbb, initial_capacity) == 1)
+    }
+    // `CBB_init` only fails if out of memory, which isn't something that this crate handles.
+    .unwrap();
+    func(&mut cbb);
+
+    let mut ptr: *mut u8 = core::ptr::null_mut();
+    let mut len: usize = 0;
+    // `CBB_finish` only fails on programming error, which we convert into a
+    // panic.
+    assert_eq!(1, unsafe {
+        bssl_sys::CBB_finish(&mut cbb, &mut ptr, &mut len)
+    });
+
+    // Safety: `ptr` is on the BoringSSL heap and ownership is returned by
+    // `CBB_finish`.
+    Buffer { ptr, len }
 }
 
 /// Used to prevent external implementations of internal traits.

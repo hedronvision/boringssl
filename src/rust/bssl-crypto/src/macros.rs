@@ -31,6 +31,10 @@ macro_rules! unsafe_iuf_algo {
                 // - this always returns a valid pointer to an EVP_MD.
                 unsafe { MdRef::from_ptr(bssl_sys::$evp_md() as *mut _) }
             }
+
+            fn hash_to_vec(input: &[u8]) -> Vec<u8> {
+                Self::hash(input).as_slice().to_vec()
+            }
         }
 
         impl $name {
@@ -99,6 +103,50 @@ macro_rules! unsafe_iuf_algo {
 
             fn flush(&mut self) -> std::io::Result<()> {
                 Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! aead_algo {
+    ($name:ident, $evp_md:ident, $key_len:expr, $nonce_len:expr, $tag_len:expr) => {
+        impl $name {
+            /// Create a new AEAD context for the given key.
+            pub fn new(key: &[u8; $key_len]) -> Self {
+                // Safety: $evp_md is assumed to return a valid `EVP_MD`.
+                unsafe { $name(EvpAead::new(key, { bssl_sys::$evp_md() })) }
+            }
+        }
+
+        impl Aead for $name {
+            type Tag = [u8; $tag_len];
+            type Nonce = [u8; $nonce_len];
+
+            fn seal(&self, nonce: &Self::Nonce, plaintext: &[u8], ad: &[u8]) -> Vec<u8> {
+                self.0.seal(nonce, plaintext, ad)
+            }
+
+            fn seal_in_place(
+                &self,
+                nonce: &Self::Nonce,
+                plaintext: &mut [u8],
+                ad: &[u8],
+            ) -> Self::Tag {
+                self.0.seal_in_place(nonce, plaintext, ad)
+            }
+
+            fn open(&self, nonce: &Self::Nonce, ciphertext: &[u8], ad: &[u8]) -> Option<Vec<u8>> {
+                self.0.open(nonce, ciphertext, ad)
+            }
+
+            fn open_in_place(
+                &self,
+                nonce: &Self::Nonce,
+                ciphertext: &mut [u8],
+                tag: &Self::Tag,
+                ad: &[u8],
+            ) -> Result<(), InvalidCiphertext> {
+                self.0.open_in_place(nonce, ciphertext, tag, ad)
             }
         }
     };
