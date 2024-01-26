@@ -146,6 +146,9 @@ set(
   crypto/hpke/hpke_test_vectors.txt
   crypto/keccak/keccak_tests.txt
   crypto/kyber/kyber_tests.txt
+  crypto/pkcs8/test/bad1.p12
+  crypto/pkcs8/test/bad2.p12
+  crypto/pkcs8/test/bad3.p12
   crypto/pkcs8/test/empty_password.p12
   crypto/pkcs8/test/empty_password_ber.p12
   crypto/pkcs8/test/empty_password_ber_nested.p12
@@ -343,6 +346,7 @@ set(
   decrepit/blowfish/blowfish_test.cc
   decrepit/cast/cast_test.cc
   decrepit/cfb/cfb_test.cc
+  decrepit/des/des_test.cc
   decrepit/evp/evp_test.cc
   decrepit/ripemd/ripemd_test.cc
   decrepit/xts/xts_test.cc

@@ -98,17 +98,6 @@ set(
   apple-aarch64/crypto/fipsmodule/sha512-armv8-apple.S
   apple-aarch64/crypto/fipsmodule/vpaes-armv8-apple.S
   apple-aarch64/crypto/test/trampoline-armv8-apple.S
-  apple-arm/crypto/chacha/chacha-armv4-apple.S
-  apple-arm/crypto/fipsmodule/aesv8-armv7-apple.S
-  apple-arm/crypto/fipsmodule/armv4-mont-apple.S
-  apple-arm/crypto/fipsmodule/bsaes-armv7-apple.S
-  apple-arm/crypto/fipsmodule/ghash-armv4-apple.S
-  apple-arm/crypto/fipsmodule/ghashv8-armv7-apple.S
-  apple-arm/crypto/fipsmodule/sha1-armv4-large-apple.S
-  apple-arm/crypto/fipsmodule/sha256-armv4-apple.S
-  apple-arm/crypto/fipsmodule/sha512-armv4-apple.S
-  apple-arm/crypto/fipsmodule/vpaes-armv7-apple.S
-  apple-arm/crypto/test/trampoline-armv4-apple.S
   apple-x86/crypto/chacha/chacha-x86-apple.S
   apple-x86/crypto/fipsmodule/aesni-x86-apple.S
   apple-x86/crypto/fipsmodule/bn-586-apple.S
@@ -575,7 +564,7 @@ add_executable(
 
 target_link_libraries(bssl ssl crypto)
 
-if(NOT ANDROID)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
   find_package(Threads REQUIRED)
   target_link_libraries(crypto Threads::Threads)
 endif()
