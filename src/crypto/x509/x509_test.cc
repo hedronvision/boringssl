@@ -1382,6 +1382,11 @@ TEST(X509Test, StoreThreads) {
     threads.emplace_back([&] {
       ASSERT_TRUE(X509_STORE_add_cert(store.get(), other2.get()));
     });
+    threads.emplace_back([&] {
+      bssl::UniquePtr<STACK_OF(X509_OBJECT)> objs(
+          X509_STORE_get1_objects(store.get()));
+      ASSERT_TRUE(objs);
+    });
   }
   for (auto &thread : threads) {
     thread.join();
@@ -4324,6 +4329,17 @@ TEST(X509Test, Expiry) {
                                     {}, {}, flags));
     }
   }
+
+  // X509_V_FLAG_USE_CHECK_TIME is an internal flag, but one caller relies on
+  // being able to clear it to restore the system time. Using the system time,
+  // all certificates in this test should read as expired.
+  EXPECT_EQ(X509_V_ERR_CERT_HAS_EXPIRED,
+            Verify(leaf.valid.get(), {root.valid.get()},
+                   {intermediate.valid.get()}, {}, 0, [](X509_STORE_CTX *ctx) {
+                     X509_VERIFY_PARAM *param = X509_STORE_CTX_get0_param(ctx);
+                     X509_VERIFY_PARAM_clear_flags(param,
+                                                   X509_V_FLAG_USE_CHECK_TIME);
+                   }));
 }
 
 TEST(X509Test, SignatureVerification) {
@@ -7714,6 +7730,36 @@ TEST(X509Test, Trust) {
       X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT,
       Verify(leaf.normal.get(), {root.trusted_any.get()},
              {intermediate.normal.get()}, {}, /*flags=*/0, set_server_trust));
+
+  // Trust settings on a certificate are ignored if the leaf did not come from
+  // |X509_STORE|. This is important because trust settings may be serialized
+  // via |d2i_X509_AUX|. It is often not obvious which functions may trigger
+  // this, so callers may inadvertently run with attacker-supplied trust
+  // settings on untrusted certificates.
+  EXPECT_EQ(X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY,
+            Verify(leaf.trusted_server.get(), /*roots=*/{},
+                   /*intermediates=*/{intermediate.trusted_server.get()}, {},
+                   /*flags=*/0, set_server_trust));
+  EXPECT_EQ(
+      X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN,
+      Verify(leaf.trusted_server.get(), /*roots=*/{},
+             /*intermediates=*/
+             {intermediate.trusted_server.get(), root.trusted_server.get()}, {},
+             /*flags=*/0, set_server_trust));
+
+  // Likewise, distrusts only take effect from |X509_STORE|.
+  EXPECT_EQ(X509_V_OK, Verify(leaf.distrusted_server.get(), {root.normal.get()},
+                              {intermediate.normal.get()}, {},
+                              /*flags=*/0, set_server_trust));
+}
+
+// Test some APIs that rust-openssl uses to look up purposes by name.
+TEST(X509Test, PurposeByShortName) {
+  int idx = X509_PURPOSE_get_by_sname("sslserver");
+  ASSERT_NE(idx, -1);
+  const X509_PURPOSE *purpose = X509_PURPOSE_get0(idx);
+  ASSERT_TRUE(purpose);
+  EXPECT_EQ(X509_PURPOSE_get_id(purpose), X509_PURPOSE_SSL_SERVER);
 }
 
 TEST(X509Test, CriticalExtension) {
@@ -7740,4 +7786,6 @@ TEST(X509Test, CriticalExtension) {
 
   EXPECT_EQ(X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION,
             Verify(leaf.get(), {root.get()}, {}, {}));
+  EXPECT_EQ(X509_V_OK, Verify(leaf.get(), {root.get()}, {}, {},
+                              X509_V_FLAG_IGNORE_CRITICAL));
 }
