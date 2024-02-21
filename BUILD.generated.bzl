@@ -193,8 +193,6 @@ crypto_headers = [
     "src/include/openssl/pkcs12.h",
     "src/include/openssl/pkcs7.h",
     "src/include/openssl/pkcs8.h",
-    "src/include/openssl/pki/certificate.h",
-    "src/include/openssl/pki/signature_verify_cache.h",
     "src/include/openssl/poly1305.h",
     "src/include/openssl/pool.h",
     "src/include/openssl/posix_time.h",
@@ -687,6 +685,11 @@ crypto_sources_nasm = [
     "win-x86_64/crypto/fipsmodule/x86_64-mont-win.asm",
     "win-x86_64/crypto/fipsmodule/x86_64-mont5-win.asm",
     "win-x86_64/crypto/test/trampoline-x86_64-win.asm",
+]
+
+pki_headers = [
+    "src/include/openssl/pki/certificate.h",
+    "src/include/openssl/pki/signature_verify_cache.h",
 ]
 
 pki_internal_headers = [

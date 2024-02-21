@@ -427,8 +427,6 @@
     "src/include/openssl/pkcs12.h", 
     "src/include/openssl/pkcs7.h", 
     "src/include/openssl/pkcs8.h", 
-    "src/include/openssl/pki/certificate.h", 
-    "src/include/openssl/pki/signature_verify_cache.h", 
     "src/include/openssl/poly1305.h", 
     "src/include/openssl/pool.h", 
     "src/include/openssl/posix_time.h", 
@@ -1014,6 +1012,10 @@
     "src/pki/verify_certificate_chain.cc", 
     "src/pki/verify_name_match.cc", 
     "src/pki/verify_signed_data.cc"
+  ], 
+  "pki_headers": [
+    "src/include/openssl/pki/certificate.h", 
+    "src/include/openssl/pki/signature_verify_cache.h"
   ], 
   "pki_internal_headers": [
     "src/pki/cert_error_id.h", 
