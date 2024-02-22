@@ -788,6 +788,7 @@ rust_bssl_crypto = [
     "src/rust/bssl-crypto/src/ed25519.rs",
     "src/rust/bssl-crypto/src/hkdf.rs",
     "src/rust/bssl-crypto/src/hmac.rs",
+    "src/rust/bssl-crypto/src/hpke.rs",
     "src/rust/bssl-crypto/src/lib.rs",
     "src/rust/bssl-crypto/src/macros.rs",
     "src/rust/bssl-crypto/src/mem.rs",
