@@ -43,6 +43,7 @@
 
 #include "internal.h"
 #include "../crypto/internal.h"
+#include "../crypto/test/file_util.h"
 #include "../crypto/test/test_util.h"
 
 #if defined(OPENSSL_WINDOWS)
@@ -8728,14 +8729,17 @@ xNCwyMX9mtdXdQicOfNjIGUCD5OLV5PgHFPRKiHHioBAhg==
   }
 }
 
-#if defined(OPENSSL_LINUX) || defined(OPENSSL_APPLE)
 TEST(SSLTest, EmptyClientCAList) {
-  // Use /dev/null on POSIX systems as an empty file.
+  if (SkipTempFileTests()) {
+    GTEST_SKIP();
+  }
+
+  TemporaryFile empty;
+  ASSERT_TRUE(empty.Init());
   bssl::UniquePtr<STACK_OF(X509_NAME)> names(
-      SSL_load_client_CA_file("/dev/null"));
+      SSL_load_client_CA_file(empty.path().c_str()));
   EXPECT_FALSE(names);
 }
-#endif  // OPENSSL_LINUX || OPENSSL_APPLE
 
 TEST(SSLTest, EmptyWriteBlockedOnHandshakeData) {
   bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
@@ -8988,6 +8992,39 @@ TEST(SSLTest, NameLists) {
       }
     }
   }
+}
+
+// Test that it is possible for the certificate to be configured on a mix of
+// SSL_CTX and SSL. This ensures that we do not inadvertently overshare objects
+// in SSL_new.
+TEST(SSLTest, MixContextAndConnection) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  ASSERT_TRUE(cert);
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(key);
+
+  // Configure the certificate, but not the private key, on the context.
+  ASSERT_TRUE(SSL_CTX_use_certificate(ctx.get(), cert.get()));
+
+  bssl::UniquePtr<SSL> ssl1(SSL_new(ctx.get()));
+  ASSERT_TRUE(ssl1.get());
+  bssl::UniquePtr<SSL> ssl2(SSL_new(ctx.get()));
+  ASSERT_TRUE(ssl2.get());
+
+  // There is no private key configured yet.
+  EXPECT_FALSE(SSL_CTX_get0_privatekey(ctx.get()));
+  EXPECT_FALSE(SSL_get_privatekey(ssl1.get()));
+  EXPECT_FALSE(SSL_get_privatekey(ssl2.get()));
+
+  // Configuring the private key on |ssl1| works.
+  ASSERT_TRUE(SSL_use_PrivateKey(ssl1.get(), key.get()));
+  EXPECT_TRUE(SSL_get_privatekey(ssl1.get()));
+
+  // It does not impact the other connection or the context.
+  EXPECT_FALSE(SSL_CTX_get0_privatekey(ctx.get()));
+  EXPECT_FALSE(SSL_get_privatekey(ssl2.get()));
 }
 
 }  // namespace
