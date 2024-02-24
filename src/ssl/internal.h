@@ -146,6 +146,7 @@
 
 #include <stdlib.h>
 
+#include <algorithm>
 #include <initializer_list>
 #include <limits>
 #include <new>
@@ -317,7 +318,7 @@ class Array {
     if (!Init(in.size())) {
       return false;
     }
-    OPENSSL_memcpy(data_, in.data(), sizeof(T) * in.size());
+    std::copy(in.begin(), in.end(), data_);
     return true;
   }
 
@@ -3201,7 +3202,6 @@ bool ssl_is_key_type_supported(int key_type);
 // message on the error queue.
 bool ssl_compare_public_and_private_key(const EVP_PKEY *pubkey,
                                        const EVP_PKEY *privkey);
-bool ssl_cert_check_private_key(const CERT *cert, const EVP_PKEY *privkey);
 bool ssl_get_new_session(SSL_HANDSHAKE *hs);
 bool ssl_encrypt_ticket(SSL_HANDSHAKE *hs, CBB *out,
                         const SSL_SESSION *session);
