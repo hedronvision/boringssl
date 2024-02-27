@@ -1996,6 +1996,72 @@ OPENSSL_EXPORT int X509V3_add1_i2d(STACK_OF(X509_EXTENSION) **x, int nid,
                                    void *value, int crit, unsigned long flags);
 
 
+// Basic constraints.
+//
+// The basic constraints extension (RFC 5280, section 4.2.1.9) determines
+// whether a certificate is a CA certificate and, if so, optionally constrains
+// the maximum depth of the certificate chain.
+
+// A BASIC_CONSTRAINTS_st, aka |BASIC_CONSTRAINTS| represents an
+// BasicConstraints structure (RFC 5280).
+struct BASIC_CONSTRAINTS_st {
+  ASN1_BOOLEAN ca;
+  ASN1_INTEGER *pathlen;
+} /* BASIC_CONSTRAINTS */;
+
+// BASIC_CONSTRAINTS is an |ASN1_ITEM| whose ASN.1 type is BasicConstraints (RFC
+// 5280) and C type is |BASIC_CONSTRAINTS*|.
+DECLARE_ASN1_ITEM(BASIC_CONSTRAINTS)
+
+// BASIC_CONSTRAINTS_new returns a newly-allocated, empty |BASIC_CONSTRAINTS|
+// object, or NULL on error.
+OPENSSL_EXPORT BASIC_CONSTRAINTS *BASIC_CONSTRAINTS_new(void);
+
+// BASIC_CONSTRAINTS_free releases memory associated with |bcons|.
+OPENSSL_EXPORT void BASIC_CONSTRAINTS_free(BASIC_CONSTRAINTS *bcons);
+
+// d2i_BASIC_CONSTRAINTS parses up to |len| bytes from |*inp| as a DER-encoded
+// BasicConstraints (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT BASIC_CONSTRAINTS *d2i_BASIC_CONSTRAINTS(BASIC_CONSTRAINTS **out,
+                                                        const uint8_t **inp,
+                                                        long len);
+
+// i2d_BASIC_CONSTRAINTS marshals |bcons| as a DER-encoded BasicConstraints (RFC
+// 5280), as described in |i2d_SAMPLE|.
+OPENSSL_EXPORT int i2d_BASIC_CONSTRAINTS(const BASIC_CONSTRAINTS *bcons,
+                                         uint8_t **outp);
+
+
+// Extended key usage.
+//
+// The extended key usage extension (RFC 5280, section 4.2.1.12) indicates the
+// purposes of the certificate's public key. Such constraints are important to
+// avoid cross-protocol attacks.
+
+typedef STACK_OF(ASN1_OBJECT) EXTENDED_KEY_USAGE;
+
+// EXTENDED_KEY_USAGE is an |ASN1_ITEM| whose ASN.1 type is ExtKeyUsageSyntax
+// (RFC 5280) and C type is |STACK_OF(ASN1_OBJECT)*|, or |EXTENDED_KEY_USAGE*|.
+DECLARE_ASN1_ITEM(EXTENDED_KEY_USAGE)
+
+// EXTENDED_KEY_USAGE_new returns a newly-allocated, empty |EXTENDED_KEY_USAGE|
+// object, or NULL on error.
+OPENSSL_EXPORT EXTENDED_KEY_USAGE *EXTENDED_KEY_USAGE_new(void);
+
+// EXTENDED_KEY_USAGE_free releases memory associated with |eku|.
+OPENSSL_EXPORT void EXTENDED_KEY_USAGE_free(EXTENDED_KEY_USAGE *eku);
+
+// d2i_EXTENDED_KEY_USAGE parses up to |len| bytes from |*inp| as a DER-encoded
+// ExtKeyUsageSyntax (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT EXTENDED_KEY_USAGE *d2i_EXTENDED_KEY_USAGE(
+    EXTENDED_KEY_USAGE **out, const uint8_t **inp, long len);
+
+// i2d_EXTENDED_KEY_USAGE marshals |eku| as a DER-encoded ExtKeyUsageSyntax (RFC
+// 5280), as described in |i2d_SAMPLE|.
+OPENSSL_EXPORT int i2d_EXTENDED_KEY_USAGE(const EXTENDED_KEY_USAGE *eku,
+                                          uint8_t **outp);
+
+
 // General names.
 //
 // A |GENERAL_NAME| represents an X.509 GeneralName structure, defined in RFC
@@ -2034,6 +2100,9 @@ typedef struct EDIPartyName_st {
 // also be empty, in which case |type| is -1 and |d| is NULL. Empty
 // |GENERAL_NAME|s are invalid and will never be returned from the parser, but
 // may be created temporarily, e.g. by |GENERAL_NAME_new|.
+//
+// WARNING: |type| and |d| must be kept consistent. An inconsistency will result
+// in a potentially exploitable memory error.
 struct GENERAL_NAME_st {
   int type;
   union {
@@ -2169,6 +2238,389 @@ OPENSSL_EXPORT int GENERAL_NAME_set0_othername(GENERAL_NAME *gen,
 OPENSSL_EXPORT int GENERAL_NAME_get0_otherName(const GENERAL_NAME *gen,
                                                ASN1_OBJECT **out_oid,
                                                ASN1_TYPE **out_value);
+
+
+// Authority key identifier.
+//
+// The authority key identifier extension (RFC 5280, section 4.2.1.1) allows a
+// certificate to more precisely identify its issuer. This is helpful when
+// multiple certificates share a name. Only the keyIdentifier (|keyid| in
+// |AUTHORITY_KEYID|) field is used in practice.
+
+// A AUTHORITY_KEYID_st, aka |AUTHORITY_KEYID|, represents an
+// AuthorityKeyIdentifier structure (RFC 5280).
+struct AUTHORITY_KEYID_st {
+  ASN1_OCTET_STRING *keyid;
+  GENERAL_NAMES *issuer;
+  ASN1_INTEGER *serial;
+} /* AUTHORITY_KEYID */;
+
+// AUTHORITY_KEYID is an |ASN1_ITEM| whose ASN.1 type is AuthorityKeyIdentifier
+// (RFC 5280) and C type is |AUTHORITY_KEYID*|.
+DECLARE_ASN1_ITEM(AUTHORITY_KEYID)
+
+// AUTHORITY_KEYID_new returns a newly-allocated, empty |AUTHORITY_KEYID|
+// object, or NULL on error.
+OPENSSL_EXPORT AUTHORITY_KEYID *AUTHORITY_KEYID_new(void);
+
+// AUTHORITY_KEYID_free releases memory associated with |akid|.
+OPENSSL_EXPORT void AUTHORITY_KEYID_free(AUTHORITY_KEYID *akid);
+
+// d2i_AUTHORITY_KEYID parses up to |len| bytes from |*inp| as a DER-encoded
+// AuthorityKeyIdentifier (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT AUTHORITY_KEYID *d2i_AUTHORITY_KEYID(AUTHORITY_KEYID **out,
+                                                    const uint8_t **inp,
+                                                    long len);
+
+// i2d_AUTHORITY_KEYID marshals |akid| as a DER-encoded AuthorityKeyIdentifier
+// (RFC 5280), as described in |i2d_SAMPLE|.
+//
+// TODO(https://crbug.com/boringssl/407): |akid| is not const because it
+// contains an |X509_NAME|.
+OPENSSL_EXPORT int i2d_AUTHORITY_KEYID(AUTHORITY_KEYID *akid, uint8_t **outp);
+
+
+// Name constraints.
+//
+// The name constraints extension (RFC 5280, section 4.2.1.10) constrains which
+// names may be asserted by certificates issued by some CA. For example, a
+// general CA may issue an intermediate certificate to the owner of example.com,
+// but constrained to ".example.com".
+
+// A GENERAL_SUBTREE represents a GeneralSubtree structure (RFC 5280).
+typedef struct GENERAL_SUBTREE_st {
+  GENERAL_NAME *base;
+  ASN1_INTEGER *minimum;
+  ASN1_INTEGER *maximum;
+} GENERAL_SUBTREE;
+
+DEFINE_STACK_OF(GENERAL_SUBTREE)
+
+// GENERAL_SUBTREE_new returns a newly-allocated, empty |GENERAL_SUBTREE|
+// object, or NULL on error.
+OPENSSL_EXPORT GENERAL_SUBTREE *GENERAL_SUBTREE_new(void);
+
+// GENERAL_SUBTREE_free releases memory associated with |subtree|.
+OPENSSL_EXPORT void GENERAL_SUBTREE_free(GENERAL_SUBTREE *subtree);
+
+// A NAME_CONSTRAINTS_st, aka |NAME_CONSTRAINTS|, represents a NameConstraints
+// structure (RFC 5280).
+struct NAME_CONSTRAINTS_st {
+  STACK_OF(GENERAL_SUBTREE) *permittedSubtrees;
+  STACK_OF(GENERAL_SUBTREE) *excludedSubtrees;
+} /* NAME_CONSTRAINTS */;
+
+// NAME_CONSTRAINTS is an |ASN1_ITEM| whose ASN.1 type is NameConstraints (RFC
+// 5280) and C type is |NAME_CONSTRAINTS*|.
+DECLARE_ASN1_ITEM(NAME_CONSTRAINTS)
+
+// NAME_CONSTRAINTS_new returns a newly-allocated, empty |NAME_CONSTRAINTS|
+// object, or NULL on error.
+OPENSSL_EXPORT NAME_CONSTRAINTS *NAME_CONSTRAINTS_new(void);
+
+// NAME_CONSTRAINTS_free releases memory associated with |ncons|.
+OPENSSL_EXPORT void NAME_CONSTRAINTS_free(NAME_CONSTRAINTS *ncons);
+
+
+// Authority information access.
+//
+// The authority information access extension (RFC 5280, 4.2.2.1) describes
+// where to obtain information about the issuer of a certificate. It is most
+// commonly used with accessMethod values of id-ad-caIssuers and id-ad-ocsp, to
+// indicate where to fetch the issuer certificate (if not provided in-band) and
+// the issuer's OCSP responder, respectively.
+
+// An ACCESS_DESCRIPTION represents an AccessDescription structure (RFC 5280).
+typedef struct ACCESS_DESCRIPTION_st {
+  ASN1_OBJECT *method;
+  GENERAL_NAME *location;
+} ACCESS_DESCRIPTION;
+
+DEFINE_STACK_OF(ACCESS_DESCRIPTION)
+
+// ACCESS_DESCRIPTION_new returns a newly-allocated, empty |ACCESS_DESCRIPTION|
+// object, or NULL on error.
+OPENSSL_EXPORT ACCESS_DESCRIPTION *ACCESS_DESCRIPTION_new(void);
+
+// ACCESS_DESCRIPTION_free releases memory associated with |desc|.
+OPENSSL_EXPORT void ACCESS_DESCRIPTION_free(ACCESS_DESCRIPTION *desc);
+
+typedef STACK_OF(ACCESS_DESCRIPTION) AUTHORITY_INFO_ACCESS;
+
+// AUTHORITY_INFO_ACCESS is an |ASN1_ITEM| whose ASN.1 type is
+// AuthorityInfoAccessSyntax (RFC 5280) and C type is
+// |STACK_OF(ACCESS_DESCRIPTION)*|, or |AUTHORITY_INFO_ACCESS*|.
+DECLARE_ASN1_ITEM(AUTHORITY_INFO_ACCESS)
+
+// AUTHORITY_INFO_ACCESS_new returns a newly-allocated, empty
+// |AUTHORITY_INFO_ACCESS| object, or NULL on error.
+OPENSSL_EXPORT AUTHORITY_INFO_ACCESS *AUTHORITY_INFO_ACCESS_new(void);
+
+// AUTHORITY_INFO_ACCESS_free releases memory associated with |aia|.
+OPENSSL_EXPORT void AUTHORITY_INFO_ACCESS_free(AUTHORITY_INFO_ACCESS *aia);
+
+// d2i_AUTHORITY_INFO_ACCESS parses up to |len| bytes from |*inp| as a
+// DER-encoded AuthorityInfoAccessSyntax (RFC 5280), as described in
+// |d2i_SAMPLE|.
+OPENSSL_EXPORT AUTHORITY_INFO_ACCESS *d2i_AUTHORITY_INFO_ACCESS(
+    AUTHORITY_INFO_ACCESS **out, const uint8_t **inp, long len);
+
+// i2d_AUTHORITY_INFO_ACCESS marshals |aia| as a DER-encoded
+// AuthorityInfoAccessSyntax (RFC 5280), as described in |i2d_SAMPLE|.
+//
+// TODO(https://crbug.com/boringssl/407): |aia| is not const because it
+// contains an |X509_NAME|.
+OPENSSL_EXPORT int i2d_AUTHORITY_INFO_ACCESS(AUTHORITY_INFO_ACCESS *aia,
+                                             uint8_t **outp);
+
+
+// CRL distribution points.
+//
+// The CRL distribution points extension (RFC 5280, 4.2.1.13) indicates where to
+// fetch a certificate issuer's CRL. The corresponding issuing distribution
+// point CRL extension (RFC 5280, section 5.2.5) matches against this extension.
+
+// A DIST_POINT_NAME represents a DistributionPointName structure (RFC 5280).
+// The |name| field contains the CHOICE value and is determined by |type|. If
+// |type| is zero, |name| must be a |fullname|. If |type| is one, |name| must be
+// a |relativename|.
+//
+// WARNING: |type| and |name| must be kept consistent. An inconsistency will
+// result in a potentially exploitable memory error.
+typedef struct DIST_POINT_NAME_st {
+  int type;
+  union {
+    GENERAL_NAMES *fullname;
+    STACK_OF(X509_NAME_ENTRY) *relativename;
+  } name;
+  // If relativename then this contains the full distribution point name
+  X509_NAME *dpname;
+} DIST_POINT_NAME;
+
+// DIST_POINT_NAME_new returns a newly-allocated, empty |DIST_POINT_NAME|
+// object, or NULL on error.
+OPENSSL_EXPORT DIST_POINT_NAME *DIST_POINT_NAME_new(void);
+
+// DIST_POINT_NAME_free releases memory associated with |name|.
+OPENSSL_EXPORT void DIST_POINT_NAME_free(DIST_POINT_NAME *name);
+
+// A DIST_POINT_st, aka |DIST_POINT|, represents a DistributionPoint structure
+// (RFC 5280).
+struct DIST_POINT_st {
+  DIST_POINT_NAME *distpoint;
+  ASN1_BIT_STRING *reasons;
+  GENERAL_NAMES *CRLissuer;
+} /* DIST_POINT */;
+
+DEFINE_STACK_OF(DIST_POINT)
+
+// DIST_POINT_new returns a newly-allocated, empty |DIST_POINT| object, or NULL
+// on error.
+OPENSSL_EXPORT DIST_POINT *DIST_POINT_new(void);
+
+// DIST_POINT_free releases memory associated with |dp|.
+OPENSSL_EXPORT void DIST_POINT_free(DIST_POINT *dp);
+
+typedef STACK_OF(DIST_POINT) CRL_DIST_POINTS;
+
+// CRL_DIST_POINTS is an |ASN1_ITEM| whose ASN.1 type is CRLDistributionPoints
+// (RFC 5280) and C type is |CRL_DIST_POINTS*|.
+DECLARE_ASN1_ITEM(CRL_DIST_POINTS)
+
+// CRL_DIST_POINTS_new returns a newly-allocated, empty |CRL_DIST_POINTS|
+// object, or NULL on error.
+OPENSSL_EXPORT CRL_DIST_POINTS *CRL_DIST_POINTS_new(void);
+
+// CRL_DIST_POINTS_free releases memory associated with |crldp|.
+OPENSSL_EXPORT void CRL_DIST_POINTS_free(CRL_DIST_POINTS *crldp);
+
+// d2i_CRL_DIST_POINTS parses up to |len| bytes from |*inp| as a DER-encoded
+// CRLDistributionPoints (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT CRL_DIST_POINTS *d2i_CRL_DIST_POINTS(CRL_DIST_POINTS **out,
+                                                    const uint8_t **inp,
+                                                    long len);
+
+// i2d_CRL_DIST_POINTS marshals |crldp| as a DER-encoded CRLDistributionPoints
+// (RFC 5280), as described in |i2d_SAMPLE|.
+//
+// TODO(https://crbug.com/boringssl/407): |crldp| is not const because it
+// contains an |X509_NAME|.
+OPENSSL_EXPORT int i2d_CRL_DIST_POINTS(CRL_DIST_POINTS *crldp, uint8_t **outp);
+
+// A ISSUING_DIST_POINT_st, aka |ISSUING_DIST_POINT|, represents a
+// IssuingDistributionPoint structure (RFC 5280).
+struct ISSUING_DIST_POINT_st {
+  DIST_POINT_NAME *distpoint;
+  ASN1_BOOLEAN onlyuser;
+  ASN1_BOOLEAN onlyCA;
+  ASN1_BIT_STRING *onlysomereasons;
+  ASN1_BOOLEAN indirectCRL;
+  ASN1_BOOLEAN onlyattr;
+} /* ISSUING_DIST_POINT */;
+
+// ISSUING_DIST_POINT is an |ASN1_ITEM| whose ASN.1 type is
+// IssuingDistributionPoint (RFC 5280) and C type is |ISSUING_DIST_POINT*|.
+DECLARE_ASN1_ITEM(ISSUING_DIST_POINT)
+
+// ISSUING_DIST_POINT_new returns a newly-allocated, empty |ISSUING_DIST_POINT|
+// object, or NULL on error.
+OPENSSL_EXPORT ISSUING_DIST_POINT *ISSUING_DIST_POINT_new(void);
+
+// ISSUING_DIST_POINT_free releases memory associated with |idp|.
+OPENSSL_EXPORT void ISSUING_DIST_POINT_free(ISSUING_DIST_POINT *idp);
+
+// d2i_ISSUING_DIST_POINT parses up to |len| bytes from |*inp| as a DER-encoded
+// IssuingDistributionPoint (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT ISSUING_DIST_POINT *d2i_ISSUING_DIST_POINT(
+    ISSUING_DIST_POINT **out, const uint8_t **inp, long len);
+
+// i2d_ISSUING_DIST_POINT marshals |idp| as a DER-encoded
+// IssuingDistributionPoint (RFC 5280), as described in |i2d_SAMPLE|.
+//
+// TODO(https://crbug.com/boringssl/407): |idp| is not const because it
+// contains an |X509_NAME|.
+OPENSSL_EXPORT int i2d_ISSUING_DIST_POINT(ISSUING_DIST_POINT *idp,
+                                          uint8_t **outp);
+
+
+// Certificate policies.
+//
+// The certificate policies extension (RFC 5280, section 4.2.1.4), along with a
+// suite of related extensions determines the "policies" that apply to a
+// certificate path. Evaluating these policies is extremely complex and has led
+// to denial-of-service vulnerabilities in several X.509 implementations. See
+// draft-ietf-lamps-x509-policy-graph.
+//
+// Do not use this mechanism.
+
+// A NOTICEREF represents a NoticeReference structure (RFC 5280).
+typedef struct NOTICEREF_st {
+  ASN1_STRING *organization;
+  STACK_OF(ASN1_INTEGER) *noticenos;
+} NOTICEREF;
+
+// NOTICEREF_new returns a newly-allocated, empty |NOTICEREF| object, or NULL
+// on error.
+OPENSSL_EXPORT NOTICEREF *NOTICEREF_new(void);
+
+// NOTICEREF_free releases memory associated with |ref|.
+OPENSSL_EXPORT void NOTICEREF_free(NOTICEREF *ref);
+
+// A USERNOTICE represents a UserNotice structure (RFC 5280).
+typedef struct USERNOTICE_st {
+  NOTICEREF *noticeref;
+  ASN1_STRING *exptext;
+} USERNOTICE;
+
+// USERNOTICE_new returns a newly-allocated, empty |USERNOTICE| object, or NULL
+// on error.
+OPENSSL_EXPORT USERNOTICE *USERNOTICE_new(void);
+
+// USERNOTICE_free releases memory associated with |notice|.
+OPENSSL_EXPORT void USERNOTICE_free(USERNOTICE *notice);
+
+// A POLICYQUALINFO represents a PolicyQualifierInfo structure (RFC 5280). |d|
+// contains the qualifier field of the PolicyQualifierInfo. Its type is
+// determined by |pqualid|. If |pqualid| is |NID_id_qt_cps|, |d| must be
+// |cpsuri|. If |pqualid| is |NID_id_qt_unotice|, |d| must be |usernotice|.
+// Otherwise, |d| must be |other|.
+//
+// WARNING: |pqualid| and |d| must be kept consistent. An inconsistency will
+// result in a potentially exploitable memory error.
+typedef struct POLICYQUALINFO_st {
+  ASN1_OBJECT *pqualid;
+  union {
+    ASN1_IA5STRING *cpsuri;
+    USERNOTICE *usernotice;
+    ASN1_TYPE *other;
+  } d;
+} POLICYQUALINFO;
+
+DEFINE_STACK_OF(POLICYQUALINFO)
+
+// POLICYQUALINFO_new returns a newly-allocated, empty |POLICYQUALINFO| object,
+// or NULL on error.
+OPENSSL_EXPORT POLICYQUALINFO *POLICYQUALINFO_new(void);
+
+// POLICYQUALINFO_free releases memory associated with |info|.
+OPENSSL_EXPORT void POLICYQUALINFO_free(POLICYQUALINFO *info);
+
+// A POLICYINFO represents a PolicyInformation structure (RFC 5280).
+typedef struct POLICYINFO_st {
+  ASN1_OBJECT *policyid;
+  STACK_OF(POLICYQUALINFO) *qualifiers;
+} POLICYINFO;
+
+DEFINE_STACK_OF(POLICYINFO)
+
+// POLICYINFO_new returns a newly-allocated, empty |POLICYINFO| object, or NULL
+// on error.
+OPENSSL_EXPORT POLICYINFO *POLICYINFO_new(void);
+
+// POLICYINFO_free releases memory associated with |info|.
+OPENSSL_EXPORT void POLICYINFO_free(POLICYINFO *info);
+
+typedef STACK_OF(POLICYINFO) CERTIFICATEPOLICIES;
+
+// CERTIFICATEPOLICIES is an |ASN1_ITEM| whose ASN.1 type is CertificatePolicies
+// (RFC 5280) and C type is |STACK_OF(POLICYINFO)*|, or |CERTIFICATEPOLICIES*|.
+DECLARE_ASN1_ITEM(CERTIFICATEPOLICIES)
+
+// CERTIFICATEPOLICIES_new returns a newly-allocated, empty
+// |CERTIFICATEPOLICIES| object, or NULL on error.
+OPENSSL_EXPORT CERTIFICATEPOLICIES *CERTIFICATEPOLICIES_new(void);
+
+// CERTIFICATEPOLICIES_free releases memory associated with |policies|.
+OPENSSL_EXPORT void CERTIFICATEPOLICIES_free(CERTIFICATEPOLICIES *policies);
+
+// d2i_CERTIFICATEPOLICIES parses up to |len| bytes from |*inp| as a DER-encoded
+// CertificatePolicies (RFC 5280), as described in |d2i_SAMPLE|.
+OPENSSL_EXPORT CERTIFICATEPOLICIES *d2i_CERTIFICATEPOLICIES(
+    CERTIFICATEPOLICIES **out, const uint8_t **inp, long len);
+
+// i2d_CERTIFICATEPOLICIES marshals |policies| as a DER-encoded
+// CertificatePolicies (RFC 5280), as described in |i2d_SAMPLE|.
+OPENSSL_EXPORT int i2d_CERTIFICATEPOLICIES(const CERTIFICATEPOLICIES *policies,
+                                           uint8_t **outp);
+
+// A POLICY_MAPPING represents an individual element of a PolicyMappings
+// structure (RFC 5280).
+typedef struct POLICY_MAPPING_st {
+  ASN1_OBJECT *issuerDomainPolicy;
+  ASN1_OBJECT *subjectDomainPolicy;
+} POLICY_MAPPING;
+
+DEFINE_STACK_OF(POLICY_MAPPING)
+
+// POLICY_MAPPING_new returns a newly-allocated, empty |POLICY_MAPPING| object,
+// or NULL on error.
+OPENSSL_EXPORT POLICY_MAPPING *POLICY_MAPPING_new(void);
+
+// POLICY_MAPPING_free releases memory associated with |mapping|.
+OPENSSL_EXPORT void POLICY_MAPPING_free(POLICY_MAPPING *mapping);
+
+typedef STACK_OF(POLICY_MAPPING) POLICY_MAPPINGS;
+
+// POLICY_MAPPINGS is an |ASN1_ITEM| whose ASN.1 type is PolicyMappings (RFC
+// 5280) and C type is |STACK_OF(POLICY_MAPPING)*|, or |POLICY_MAPPINGS*|.
+DECLARE_ASN1_ITEM(POLICY_MAPPINGS)
+
+// A POLICY_CONSTRAINTS represents a PolicyConstraints structure (RFC 5280).
+typedef struct POLICY_CONSTRAINTS_st {
+  ASN1_INTEGER *requireExplicitPolicy;
+  ASN1_INTEGER *inhibitPolicyMapping;
+} POLICY_CONSTRAINTS;
+
+// POLICY_CONSTRAINTS is an |ASN1_ITEM| whose ASN.1 type is PolicyConstraints
+// (RFC 5280) and C type is |POLICY_CONSTRAINTS*|.
+DECLARE_ASN1_ITEM(POLICY_CONSTRAINTS)
+
+// POLICY_CONSTRAINTS_new returns a newly-allocated, empty |POLICY_CONSTRAINTS|
+// object, or NULL on error.
+OPENSSL_EXPORT POLICY_CONSTRAINTS *POLICY_CONSTRAINTS_new(void);
+
+// POLICY_CONSTRAINTS_free releases memory associated with |pcons|.
+OPENSSL_EXPORT void POLICY_CONSTRAINTS_free(POLICY_CONSTRAINTS *pcons);
 
 
 // Algorithm identifiers.
@@ -2532,7 +2984,7 @@ OPENSSL_EXPORT X509 *X509_OBJECT_get0_X509(const X509_OBJECT *obj);
 //
 // The result will include all certificates and CRLs added via
 // |X509_STORE_add_cert| and |X509_STORE_add_crl|, as well as any cached objects
-// added by |X509_LOOKUP_hash_dir|. The last of these may change over time, as
+// added by |X509_LOOKUP_add_dir|. The last of these may change over time, as
 // different objects are loaded from the filesystem. Callers should not depend
 // on this caching behavior. The objects are returned in no particular order.
 OPENSSL_EXPORT STACK_OF(X509_OBJECT) *X509_STORE_get1_objects(
@@ -3139,6 +3591,201 @@ OPENSSL_EXPORT int X509_VERIFY_PARAM_set_purpose(X509_VERIFY_PARAM *param,
 // state, so we removed it.
 OPENSSL_EXPORT int X509_VERIFY_PARAM_set_trust(X509_VERIFY_PARAM *param,
                                                int trust);
+
+
+// Filesystem-based certificate stores.
+//
+// An |X509_STORE| may be configured to get its contents from the filesystem.
+// This is done by adding |X509_LOOKUP| structures to the |X509_STORE| with
+// |X509_STORE_add_lookup| and then configuring the |X509_LOOKUP| with paths.
+//
+// Most cases can use |X509_STORE_load_locations|, which configures the same
+// thing but is simpler to use.
+
+// X509_STORE_load_locations configures |store| to load data from filepaths
+// |file| and |dir|. It returns one on success and zero on error. Either of
+// |file| or |dir| may be NULL, but at least one must be non-NULL.
+//
+// If |file| is non-NULL, it loads CRLs and trusted certificates in PEM format
+// from the file at |file|, and them to |store|, as in |X509_load_cert_crl_file|
+// with |X509_FILETYPE_PEM|.
+//
+// If |dir| is non-NULL, it configures |store| to load CRLs and trusted
+// certificates from the directory at |dir| in PEM format, as in
+// |X509_LOOKUP_add_dir| with |X509_FILETYPE_PEM|.
+OPENSSL_EXPORT int X509_STORE_load_locations(X509_STORE *store,
+                                             const char *file, const char *dir);
+
+// X509_STORE_add_lookup returns an |X509_LOOKUP| associated with |store| with
+// type |method|, or NULL on error. The result is owned by |store|, so callers
+// are not expected to free it. This may be used with |X509_LOOKUP_add_dir| or
+// |X509_LOOKUP_load_file|, depending on |method|, to configure |store|.
+//
+// A single |X509_LOOKUP| may be configured with multiple paths, and an
+// |X509_STORE| only contains one |X509_LOOKUP| of each type, so there is no
+// need to call this function multiple times for a single type. Calling it
+// multiple times will return the previous |X509_LOOKUP| of that type.
+OPENSSL_EXPORT X509_LOOKUP *X509_STORE_add_lookup(
+    X509_STORE *store, const X509_LOOKUP_METHOD *method);
+
+// X509_LOOKUP_hash_dir creates |X509_LOOKUP|s that may be used with
+// |X509_LOOKUP_add_dir|.
+OPENSSL_EXPORT const X509_LOOKUP_METHOD *X509_LOOKUP_hash_dir(void);
+
+// X509_LOOKUP_file creates |X509_LOOKUP|s that may be used with
+// |X509_LOOKUP_load_file|.
+//
+// Although this is modeled as an |X509_LOOKUP|, this function is redundant. It
+// has the same effect as loading a certificate or CRL from the filesystem, in
+// the caller's desired format, and then adding it with |X509_STORE_add_cert|
+// and |X509_STORE_add_crl|.
+OPENSSL_EXPORT const X509_LOOKUP_METHOD *X509_LOOKUP_file(void);
+
+// The following constants are used to specify the format of files in an
+// |X509_LOOKUP|.
+#define X509_FILETYPE_PEM 1
+#define X509_FILETYPE_ASN1 2
+#define X509_FILETYPE_DEFAULT 3
+
+// X509_LOOKUP_load_file calls |X509_load_cert_crl_file|. |lookup| must have
+// been constructed with |X509_LOOKUP_file|.
+//
+// If |type| is |X509_FILETYPE_DEFAULT|, it ignores |file| and instead uses some
+// default system path with |X509_FILETYPE_PEM|. See also
+// |X509_STORE_set_default_paths|.
+OPENSSL_EXPORT int X509_LOOKUP_load_file(X509_LOOKUP *lookup, const char *file,
+                                         int type);
+
+// X509_LOOKUP_add_dir configures |lookup| to load CRLs and trusted certificates
+// from the directories in |path|. It returns one on success and zero on error.
+// |lookup| must have been constructed with |X509_LOOKUP_hash_dir|.
+//
+// WARNING: |path| is interpreted as a colon-separated (semicolon-separated on
+// Windows) list of paths. It is not possible to configure a path containing the
+// separator character. https://crbug.com/boringssl/691 tracks removing this
+// behavior.
+//
+// |type| should be one of the |X509_FILETYPE_*| constants and determines the
+// format of the files. If |type| is |X509_FILETYPE_DEFAULT|, |path| is ignored
+// and some default system path is used with |X509_FILETYPE_PEM|. See also
+// |X509_STORE_set_default_paths|.
+//
+// Trusted certificates should be named HASH.N and CRLs should be
+// named HASH.rN. HASH is |X509_NAME_hash| of the certificate subject and CRL
+// issuer, respectively, in hexadecimal. N is in decimal and counts hash
+// collisions consecutively, starting from zero. For example, "002c0b4f.0" and
+// "002c0b4f.r0".
+//
+// WARNING: Objects from |path| are loaded on demand, but cached in memory on
+// the |X509_STORE|. If a CA is removed from the directory, existing
+// |X509_STORE|s will continue to trust it. Cache entries are not evicted for
+// the lifetime of the |X509_STORE|.
+//
+// WARNING: This mechanism is also not well-suited for CRL updates.
+// |X509_STORE|s rely on this cache and never load the same CRL file twice. CRL
+// updates must use a new file, with an incremented suffix, to be reflected in
+// existing |X509_STORE|s. However, this means each CRL update will use
+// additional storage and memory. Instead, configure inputs that vary per
+// verification, such as CRLs, on each |X509_STORE_CTX| separately, using
+// functions like |X509_STORE_CTX_set0_crl|.
+OPENSSL_EXPORT int X509_LOOKUP_add_dir(X509_LOOKUP *lookup, const char *path,
+                                       int type);
+
+// X509_L_* are commands for |X509_LOOKUP_ctrl|.
+#define X509_L_FILE_LOAD 1
+#define X509_L_ADD_DIR 2
+
+// X509_LOOKUP_ctrl implements commands on |lookup|. |cmd| specifies the
+// command. The other arguments specify the operation in a command-specific way.
+// Use |X509_LOOKUP_load_file| or |X509_LOOKUP_add_dir| instead.
+OPENSSL_EXPORT int X509_LOOKUP_ctrl(X509_LOOKUP *lookup, int cmd,
+                                    const char *argc, long argl, char **ret);
+
+// X509_load_cert_file loads trusted certificates from |file| and adds them to
+// |lookup|'s |X509_STORE|. It returns one on success and zero on error.
+//
+// If |type| is |X509_FILETYPE_ASN1|, it loads a single DER-encoded certificate.
+// If |type| is |X509_FILETYPE_PEM|, it loads a sequence of PEM-encoded
+// certificates. |type| may not be |X509_FILETYPE_DEFAULT|.
+OPENSSL_EXPORT int X509_load_cert_file(X509_LOOKUP *lookup, const char *file,
+                                       int type);
+
+// X509_load_crl_file loads CRLs from |file| and add them it to |lookup|'s
+// |X509_STORE|. It returns one on success and zero on error.
+//
+// If |type| is |X509_FILETYPE_ASN1|, it loads a single DER-encoded CRL. If
+// |type| is |X509_FILETYPE_PEM|, it loads a sequence of PEM-encoded CRLs.
+// |type| may not be |X509_FILETYPE_DEFAULT|.
+OPENSSL_EXPORT int X509_load_crl_file(X509_LOOKUP *lookup, const char *file,
+                                      int type);
+
+// X509_load_cert_crl_file loads CRLs and trusted certificates from |file| and
+// adds them to |lookup|'s |X509_STORE|. It returns one on success and zero on
+// error.
+//
+// If |type| is |X509_FILETYPE_ASN1|, it loads a single DER-encoded certificate.
+// This function cannot be used to load a DER-encoded CRL. If |type| is
+// |X509_FILETYPE_PEM|, it loads a sequence of PEM-encoded certificates and
+// CRLs. |type| may not be |X509_FILETYPE_DEFAULT|.
+OPENSSL_EXPORT int X509_load_cert_crl_file(X509_LOOKUP *lookup,
+                                           const char *file, int type);
+
+// X509_NAME_hash returns a hash of |name|, or zero on error. This is the new
+// hash used by |X509_LOOKUP_add_dir|.
+//
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
+// not suitable for general-purpose X.509 name processing. It is very short, so
+// there will be hash collisions. It also depends on an OpenSSL-specific
+// canonicalization process.
+//
+// TODO(https://crbug.com/boringssl/407): This should be const and thread-safe
+// but currently is neither, notably if |name| was modified from its parsed
+// value.
+OPENSSL_EXPORT uint32_t X509_NAME_hash(X509_NAME *name);
+
+// X509_NAME_hash_old returns a hash of |name|, or zero on error. This is the
+// legacy hash used by |X509_LOOKUP_add_dir|, which is still supported for
+// compatibility.
+//
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
+// not suitable for general-purpose X.509 name processing. It is very short, so
+// there will be hash collisions.
+//
+// TODO(https://crbug.com/boringssl/407): This should be const and thread-safe
+// but currently is neither, notably if |name| was modified from its parsed
+// value.
+OPENSSL_EXPORT uint32_t X509_NAME_hash_old(X509_NAME *name);
+
+// X509_STORE_set_default_paths configures |store| to read from some "default"
+// filesystem paths. It returns one on success and zero on error. The filesystem
+// paths are determined by a combination of hardcoded paths and the SSL_CERT_DIR
+// and SSL_CERT_FILE environment variables.
+//
+// Using this function is not recommended. In OpenSSL, these defaults are
+// determined by OpenSSL's install prefix. There is no corresponding concept for
+// BoringSSL. Future versions of BoringSSL may change or remove this
+// functionality.
+OPENSSL_EXPORT int X509_STORE_set_default_paths(X509_STORE *store);
+
+// The following functions return filesystem paths used to determine the above
+// "default" paths, when the corresponding environment variables are not set.
+//
+// Using these functions is not recommended. In OpenSSL, these defaults are
+// determined by OpenSSL's install prefix. There is no corresponding concept for
+// BoringSSL. Future versions of BoringSSL may change or remove this
+// functionality.
+OPENSSL_EXPORT const char *X509_get_default_cert_area(void);
+OPENSSL_EXPORT const char *X509_get_default_cert_dir(void);
+OPENSSL_EXPORT const char *X509_get_default_cert_file(void);
+OPENSSL_EXPORT const char *X509_get_default_private_dir(void);
+
+// X509_get_default_cert_dir_env returns "SSL_CERT_DIR", an environment variable
+// used to determine the above "default" paths.
+OPENSSL_EXPORT const char *X509_get_default_cert_dir_env(void);
+
+// X509_get_default_cert_file_env returns "SSL_CERT_FILE", an environment
+// variable used to determine the above "default" paths.
+OPENSSL_EXPORT const char *X509_get_default_cert_file_env(void);
 
 
 // SignedPublicKeyAndChallenge structures.
@@ -3821,7 +4468,7 @@ OPENSSL_EXPORT int X509_CRL_cmp(const X509_CRL *a, const X509_CRL *b);
 // X509_issuer_name_hash returns the hash of |x509|'s issuer name with
 // |X509_NAME_hash|.
 //
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
 // not suitable for general-purpose X.509 name processing. It is very short, so
 // there will be hash collisions. It also depends on an OpenSSL-specific
 // canonicalization process.
@@ -3830,7 +4477,7 @@ OPENSSL_EXPORT uint32_t X509_issuer_name_hash(X509 *x509);
 // X509_subject_name_hash returns the hash of |x509|'s subject name with
 // |X509_NAME_hash|.
 //
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
 // not suitable for general-purpose X.509 name processing. It is very short, so
 // there will be hash collisions. It also depends on an OpenSSL-specific
 // canonicalization process.
@@ -3839,7 +4486,7 @@ OPENSSL_EXPORT uint32_t X509_subject_name_hash(X509 *x509);
 // X509_issuer_name_hash_old returns the hash of |x509|'s issuer name with
 // |X509_NAME_hash_old|.
 //
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
 // not suitable for general-purpose X.509 name processing. It is very short, so
 // there will be hash collisions.
 OPENSSL_EXPORT uint32_t X509_issuer_name_hash_old(X509 *x509);
@@ -3847,7 +4494,7 @@ OPENSSL_EXPORT uint32_t X509_issuer_name_hash_old(X509 *x509);
 // X509_subject_name_hash_old returns the hash of |x509|'s usjbect name with
 // |X509_NAME_hash_old|.
 //
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
+// This hash is specific to the |X509_LOOKUP_add_dir| filesystem format and is
 // not suitable for general-purpose X.509 name processing. It is very short, so
 // there will be hash collisions.
 OPENSSL_EXPORT uint32_t X509_subject_name_hash_old(X509 *x509);
@@ -4689,7 +5336,7 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_chain(X509_STORE_CTX *ctx,
 // WARNING: This function is not thread-safe. If |store| is shared across
 // multiple threads, callers cannot safely inspect the result of this function,
 // because another thread may have concurrently added to it. In particular,
-// |X509_LOOKUP_hash_dir| treats this list as a cache and may add to it in the
+// |X509_LOOKUP_add_dir| treats this list as a cache and may add to it in the
 // course of certificate verification. This API additionally prevents fixing
 // some quadratic worst-case behavior in |X509_STORE| and may be removed in the
 // future. Use |X509_STORE_get1_objects| instead.
@@ -4721,239 +5368,14 @@ OPENSSL_EXPORT const X509_PURPOSE *X509_PURPOSE_get0(int id);
 // |X509_PURPOSE_*| constants.
 OPENSSL_EXPORT int X509_PURPOSE_get_id(const X509_PURPOSE *purpose);
 
-
-// Private structures.
-
-struct X509_algor_st {
-  ASN1_OBJECT *algorithm;
-  ASN1_TYPE *parameter;
-} /* X509_ALGOR */;
-
-
-// Underdocumented functions.
+// The following constants are values for the legacy Netscape certificate type
+// X.509 extension, a precursor to extended key usage. These values correspond
+// to the DER encoding of the first byte of the BIT STRING. That is, 0x80 is
+// bit zero and 0x01 is bit seven.
 //
-// TODO(https://crbug.com/boringssl/426): Functions below this point have not
-// yet been documented or organized into sections.
-
-// This stuff is certificate "auxiliary info"
-// it contains details which are useful in certificate
-// stores and databases. When used this is tagged onto
-// the end of the certificate itself
-
-DECLARE_STACK_OF(DIST_POINT)
-
-OPENSSL_EXPORT const char *X509_get_default_cert_area(void);
-OPENSSL_EXPORT const char *X509_get_default_cert_dir(void);
-OPENSSL_EXPORT const char *X509_get_default_cert_file(void);
-OPENSSL_EXPORT const char *X509_get_default_cert_dir_env(void);
-OPENSSL_EXPORT const char *X509_get_default_cert_file_env(void);
-OPENSSL_EXPORT const char *X509_get_default_private_dir(void);
-
-// X509_NAME_hash returns a hash of |name|, or zero on error. This is the new
-// hash used by |X509_LOOKUP_hash_dir|.
-//
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
-// not suitable for general-purpose X.509 name processing. It is very short, so
-// there will be hash collisions. It also depends on an OpenSSL-specific
-// canonicalization process.
-//
-// TODO(https://crbug.com/boringssl/407): This should be const and thread-safe
-// but currently is neither, notably if |name| was modified from its parsed
-// value.
-OPENSSL_EXPORT uint32_t X509_NAME_hash(X509_NAME *name);
-
-// X509_NAME_hash_old returns a hash of |name|, or zero on error. This is the
-// legacy hash used by |X509_LOOKUP_hash_dir|, which is still supported for
-// compatibility.
-//
-// This hash is specific to the |X509_LOOKUP_hash_dir| filesystem format and is
-// not suitable for general-purpose X.509 name processing. It is very short, so
-// there will be hash collisions.
-//
-// TODO(https://crbug.com/boringssl/407): This should be const and thread-safe
-// but currently is neither, notably if |name| was modified from its parsed
-// value.
-OPENSSL_EXPORT uint32_t X509_NAME_hash_old(X509_NAME *name);
-
-/*
-SSL_CTX -> X509_STORE
-                -> X509_LOOKUP
-                        ->X509_LOOKUP_METHOD
-                -> X509_LOOKUP
-                        ->X509_LOOKUP_METHOD
-
-SSL	-> X509_STORE_CTX
-                ->X509_STORE
-
-The X509_STORE holds the tables etc for verification stuff.
-A X509_STORE_CTX is used while validating a single certificate.
-The X509_STORE has X509_LOOKUPs for looking up certs.
-The X509_STORE then calls a function to actually verify the
-certificate chain.
-*/
-
-#define X509_L_FILE_LOAD 1
-#define X509_L_ADD_DIR 2
-
-// The following constants are used to specify the format of files in an
-// |X509_LOOKUP|.
-#define X509_FILETYPE_PEM 1
-#define X509_FILETYPE_ASN1 2
-#define X509_FILETYPE_DEFAULT 3
-
-// X509_LOOKUP_load_file configures |lookup| to load information from the file
-// at |path|. It returns one on success and zero on error. |type| should be one
-// of the |X509_FILETYPE_*| constants to determine if the contents are PEM or
-// DER. If |type| is |X509_FILETYPE_DEFAULT|, |path| is ignored and instead some
-// default system path is used.
-OPENSSL_EXPORT int X509_LOOKUP_load_file(X509_LOOKUP *lookup, const char *path,
-                                         int type);
-
-// X509_LOOKUP_add_dir configures |lookup| to load information from the
-// directory at |path|. It returns one on success and zero on error. |type|
-// should be one of the |X509_FILETYPE_*| constants to determine if the contents
-// are PEM or DER. If |type| is |X509_FILETYPE_DEFAULT|, |path| is ignored and
-// instead some default system path is used.
-//
-// WARNING: |path| is interpreted as a colon-separated (semicolon-separated on
-// Windows) list of paths. It is not possible to configure a path containing the
-// separator character.
-//
-// TODO(crbug.com/boringssl/691): The colon handling is surprising. Consider
-// removing it.
-OPENSSL_EXPORT int X509_LOOKUP_add_dir(X509_LOOKUP *lookup, const char *path,
-                                       int type);
-
-OPENSSL_EXPORT X509_LOOKUP *X509_STORE_add_lookup(X509_STORE *v,
-                                                  const X509_LOOKUP_METHOD *m);
-
-OPENSSL_EXPORT const X509_LOOKUP_METHOD *X509_LOOKUP_hash_dir(void);
-OPENSSL_EXPORT const X509_LOOKUP_METHOD *X509_LOOKUP_file(void);
-
-OPENSSL_EXPORT int X509_LOOKUP_ctrl(X509_LOOKUP *ctx, int cmd, const char *argc,
-                                    long argl, char **ret);
-
-OPENSSL_EXPORT int X509_load_cert_file(X509_LOOKUP *ctx, const char *file,
-                                       int type);
-OPENSSL_EXPORT int X509_load_crl_file(X509_LOOKUP *ctx, const char *file,
-                                      int type);
-OPENSSL_EXPORT int X509_load_cert_crl_file(X509_LOOKUP *ctx, const char *file,
-                                           int type);
-
-OPENSSL_EXPORT int X509_STORE_load_locations(X509_STORE *ctx, const char *file,
-                                             const char *dir);
-OPENSSL_EXPORT int X509_STORE_set_default_paths(X509_STORE *ctx);
-
-struct BASIC_CONSTRAINTS_st {
-  ASN1_BOOLEAN ca;
-  ASN1_INTEGER *pathlen;
-};
-
-typedef struct ACCESS_DESCRIPTION_st {
-  ASN1_OBJECT *method;
-  GENERAL_NAME *location;
-} ACCESS_DESCRIPTION;
-
-DEFINE_STACK_OF(ACCESS_DESCRIPTION)
-
-typedef STACK_OF(ACCESS_DESCRIPTION) AUTHORITY_INFO_ACCESS;
-
-typedef STACK_OF(ASN1_OBJECT) EXTENDED_KEY_USAGE;
-
-typedef struct DIST_POINT_NAME_st {
-  int type;
-  union {
-    GENERAL_NAMES *fullname;
-    STACK_OF(X509_NAME_ENTRY) *relativename;
-  } name;
-  // If relativename then this contains the full distribution point name
-  X509_NAME *dpname;
-} DIST_POINT_NAME;
-
-struct DIST_POINT_st {
-  DIST_POINT_NAME *distpoint;
-  ASN1_BIT_STRING *reasons;
-  GENERAL_NAMES *CRLissuer;
-};
-
-typedef STACK_OF(DIST_POINT) CRL_DIST_POINTS;
-
-DEFINE_STACK_OF(DIST_POINT)
-
-struct AUTHORITY_KEYID_st {
-  ASN1_OCTET_STRING *keyid;
-  GENERAL_NAMES *issuer;
-  ASN1_INTEGER *serial;
-};
-
-typedef struct NOTICEREF_st {
-  ASN1_STRING *organization;
-  STACK_OF(ASN1_INTEGER) *noticenos;
-} NOTICEREF;
-
-typedef struct USERNOTICE_st {
-  NOTICEREF *noticeref;
-  ASN1_STRING *exptext;
-} USERNOTICE;
-
-typedef struct POLICYQUALINFO_st {
-  ASN1_OBJECT *pqualid;
-  union {
-    ASN1_IA5STRING *cpsuri;
-    USERNOTICE *usernotice;
-    ASN1_TYPE *other;
-  } d;
-} POLICYQUALINFO;
-
-DEFINE_STACK_OF(POLICYQUALINFO)
-
-typedef struct POLICYINFO_st {
-  ASN1_OBJECT *policyid;
-  STACK_OF(POLICYQUALINFO) *qualifiers;
-} POLICYINFO;
-
-typedef STACK_OF(POLICYINFO) CERTIFICATEPOLICIES;
-
-DEFINE_STACK_OF(POLICYINFO)
-
-typedef struct POLICY_MAPPING_st {
-  ASN1_OBJECT *issuerDomainPolicy;
-  ASN1_OBJECT *subjectDomainPolicy;
-} POLICY_MAPPING;
-
-DEFINE_STACK_OF(POLICY_MAPPING)
-
-typedef STACK_OF(POLICY_MAPPING) POLICY_MAPPINGS;
-
-typedef struct GENERAL_SUBTREE_st {
-  GENERAL_NAME *base;
-  ASN1_INTEGER *minimum;
-  ASN1_INTEGER *maximum;
-} GENERAL_SUBTREE;
-
-DEFINE_STACK_OF(GENERAL_SUBTREE)
-
-struct NAME_CONSTRAINTS_st {
-  STACK_OF(GENERAL_SUBTREE) *permittedSubtrees;
-  STACK_OF(GENERAL_SUBTREE) *excludedSubtrees;
-};
-
-typedef struct POLICY_CONSTRAINTS_st {
-  ASN1_INTEGER *requireExplicitPolicy;
-  ASN1_INTEGER *inhibitPolicyMapping;
-} POLICY_CONSTRAINTS;
-
-struct ISSUING_DIST_POINT_st {
-  DIST_POINT_NAME *distpoint;
-  ASN1_BOOLEAN onlyuser;
-  ASN1_BOOLEAN onlyCA;
-  ASN1_BIT_STRING *onlysomereasons;
-  ASN1_BOOLEAN indirectCRL;
-  ASN1_BOOLEAN onlyattr;
-};
-
-// X509_PURPOSE stuff
-
+// TODO(davidben): These constants are only used by OpenVPN, which deprecated
+// the feature in 2017. The documentation says it was removed, but they did not
+// actually remove it. See if OpenVPN will accept a patch to finish this.
 #define NS_SSL_CLIENT 0x80
 #define NS_SSL_SERVER 0x40
 #define NS_SMIME 0x20
@@ -4963,52 +5385,13 @@ struct ISSUING_DIST_POINT_st {
 #define NS_OBJSIGN_CA 0x01
 #define NS_ANY_CA (NS_SSL_CA | NS_SMIME_CA | NS_OBJSIGN_CA)
 
-DECLARE_ASN1_FUNCTIONS_const(BASIC_CONSTRAINTS)
 
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(AUTHORITY_KEYID)
+// Private structures.
 
-DECLARE_ASN1_FUNCTIONS_const(EXTENDED_KEY_USAGE)
-
-DECLARE_ASN1_FUNCTIONS_const(CERTIFICATEPOLICIES)
-DECLARE_ASN1_FUNCTIONS_const(POLICYINFO)
-DECLARE_ASN1_FUNCTIONS_const(POLICYQUALINFO)
-DECLARE_ASN1_FUNCTIONS_const(USERNOTICE)
-DECLARE_ASN1_FUNCTIONS_const(NOTICEREF)
-
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(CRL_DIST_POINTS)
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(DIST_POINT)
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(DIST_POINT_NAME)
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(ISSUING_DIST_POINT)
-
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(ACCESS_DESCRIPTION)
-// TODO(https://crbug.com/boringssl/407): This is not const because it contains
-// an |X509_NAME|.
-DECLARE_ASN1_FUNCTIONS(AUTHORITY_INFO_ACCESS)
-
-DECLARE_ASN1_ITEM(POLICY_MAPPING)
-DECLARE_ASN1_ALLOC_FUNCTIONS(POLICY_MAPPING)
-DECLARE_ASN1_ITEM(POLICY_MAPPINGS)
-
-DECLARE_ASN1_ITEM(GENERAL_SUBTREE)
-DECLARE_ASN1_ALLOC_FUNCTIONS(GENERAL_SUBTREE)
-
-DECLARE_ASN1_ITEM(NAME_CONSTRAINTS)
-DECLARE_ASN1_ALLOC_FUNCTIONS(NAME_CONSTRAINTS)
-
-DECLARE_ASN1_ALLOC_FUNCTIONS(POLICY_CONSTRAINTS)
-DECLARE_ASN1_ITEM(POLICY_CONSTRAINTS)
+struct X509_algor_st {
+  ASN1_OBJECT *algorithm;
+  ASN1_TYPE *parameter;
+} /* X509_ALGOR */;
 
 
 #if defined(__cplusplus)
