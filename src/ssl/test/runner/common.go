@@ -112,7 +112,7 @@ const (
 	extensionPadding                    uint16 = 21
 	extensionExtendedMasterSecret       uint16 = 23
 	extensionCompressedCertAlgs         uint16 = 27
-	extensionDelegatedCredentials       uint16 = 34
+	extensionDelegatedCredential        uint16 = 34
 	extensionSessionTicket              uint16 = 35
 	extensionPreSharedKey               uint16 = 41
 	extensionEarlyData                  uint16 = 42
@@ -441,9 +441,9 @@ type Config struct {
 	// If Time is nil, TLS uses time.Now.
 	Time func() time.Time
 
-	// Chain contains the certificate chain to present to the other side of
+	// Credential contains the credential to present to the other side of
 	// the connection. Server configurations must include this field.
-	Chain *CertificateChain
+	Credential *Credential
 
 	// RootCAs defines the set of root certificate authorities
 	// that clients use when verifying server certificates.
@@ -590,6 +590,11 @@ type Config struct {
 	// VerifySignatureAlgorithms, if not nil, overrides the default set of
 	// supported signature algorithms that are accepted.
 	VerifySignatureAlgorithms []signatureAlgorithm
+
+	// DelegatedCredentialAlgorithms, if not empty, is the set of signature
+	// algorithms allowed for the delegated credential key. If empty, delegated
+	// credentials are disabled.
+	DelegatedCredentialAlgorithms []signatureAlgorithm
 
 	// QUICTransportParams, if not empty, will be sent in the QUIC
 	// transport parameters extension.
@@ -1837,7 +1842,7 @@ type ProtocolBugs struct {
 
 	// RenegotiationCertificate, if not nil, is the certificate to use on
 	// renegotiation handshakes.
-	RenegotiationCertificate *CertificateChain
+	RenegotiationCertificate *Credential
 
 	// ExpectNoCertificateAuthoritiesExtension, if true, causes the client to
 	// reject CertificateRequest with the CertificateAuthorities extension.
@@ -1951,10 +1956,6 @@ type ProtocolBugs struct {
 	// FailIfDelegatedCredentials, if true, causes a handshake failure if the
 	// server returns delegated credentials.
 	FailIfDelegatedCredentials bool
-
-	// DisableDelegatedCredentials, if true, disables client support for delegated
-	// credentials.
-	DisableDelegatedCredentials bool
 
 	// CompatModeWithQUIC, if true, enables TLS 1.3 compatibility mode
 	// when running over QUIC.
@@ -2138,8 +2139,10 @@ func (c *Config) verifySignatureAlgorithms() []signatureAlgorithm {
 	return supportedSignatureAlgorithms
 }
 
-// A CertificateChain is a chain of one or more certificates, leaf first.
-type CertificateChain struct {
+// A Credential is a certificate chain and private key that a TLS endpoint may
+// use to authenticate.
+type Credential struct {
+	// Certificate is a chain of one or more certificates, leaf first.
 	Certificate [][]byte
 	PrivateKey  crypto.PrivateKey // supported types: *rsa.PrivateKey, *ecdsa.PrivateKey
 	// OCSPStaple contains an optional OCSP response which will be served
@@ -2339,15 +2342,6 @@ func unexpectedMessageError(wanted, got any) error {
 	return fmt.Errorf("tls: received unexpected handshake message of type %T when waiting for %T", got, wanted)
 }
 
-func isSupportedSignatureAlgorithm(sigAlg signatureAlgorithm, sigAlgs []signatureAlgorithm) bool {
-	for _, s := range sigAlgs {
-		if s == sigAlg {
-			return true
-		}
-	}
-	return false
-}
-
 var (
 	// See RFC 8446, section 4.1.3.
 	downgradeTLS13 = []byte{0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01}
@@ -2392,10 +2386,10 @@ var baseCertTemplate = &x509.Certificate{
 
 var tmpDir string
 
-func generateSingleCertChain(template *x509.Certificate, key crypto.Signer, ocspStaple, sctList []byte) CertificateChain {
+func generateSingleCertChain(template *x509.Certificate, key crypto.Signer, ocspStaple, sctList []byte) Credential {
 	cert := generateTestCert(template, nil, key, ocspStaple, sctList)
 	tmpCertPath, tmpKeyPath := writeTempCertFile([]*x509.Certificate{cert}), writeTempKeyFile(key)
-	return CertificateChain{
+	return Credential{
 		Certificate:                    [][]byte{cert.Raw},
 		PrivateKey:                     key,
 		OCSPStaple:                     ocspStaple,

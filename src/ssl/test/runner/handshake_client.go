@@ -39,6 +39,7 @@ type clientHandshakeState struct {
 	session        *ClientSessionState
 	finishedBytes  []byte
 	peerPublicKey  crypto.PublicKey
+	peerIsDC       bool
 }
 
 func mapClientHelloVersion(vers uint16, isDTLS bool) uint16 {
@@ -525,7 +526,7 @@ func (hs *clientHandshakeState) createClientHello(innerHello *clientHelloMsg, ec
 		customExtension:           c.config.Bugs.CustomExtension,
 		omitExtensions:            c.config.Bugs.OmitExtensions,
 		emptyExtensions:           c.config.Bugs.EmptyExtensions,
-		delegatedCredentials:      !c.config.Bugs.DisableDelegatedCredentials,
+		delegatedCredential:       c.config.DelegatedCredentialAlgorithms,
 	}
 
 	// Translate the bugs that modify ClientHello extension order into a
@@ -1183,7 +1184,7 @@ func (hs *clientHandshakeState) doTLS13Handshake(msg any) error {
 		return err
 	}
 
-	var chainToSend *CertificateChain
+	var credential *Credential
 	var certReq *certificateRequestMsg
 	if c.didResume {
 		// Copy over authentication from the session.
@@ -1213,7 +1214,7 @@ func (hs *clientHandshakeState) doTLS13Handshake(msg any) error {
 
 			hs.writeServerHash(certReq.marshal())
 
-			chainToSend = c.config.Chain
+			credential = c.config.Credential
 			msg, err = c.readHandshake()
 			if err != nil {
 				return err
@@ -1299,7 +1300,11 @@ func (hs *clientHandshakeState) doTLS13Handshake(msg any) error {
 
 		c.peerSignatureAlgorithm = certVerifyMsg.signatureAlgorithm
 		input := hs.finishedHash.certificateVerifyInput(serverCertificateVerifyContextTLS13)
-		err = verifyMessage(c.vers, hs.peerPublicKey, c.config, certVerifyMsg.signatureAlgorithm, input, certVerifyMsg.signature)
+		if hs.peerIsDC {
+			err = verifyMessageDC(c.vers, hs.peerPublicKey, c.config, certVerifyMsg.signatureAlgorithm, input, certVerifyMsg.signature)
+		} else {
+			err = verifyMessage(c.vers, hs.peerPublicKey, c.config, certVerifyMsg.signatureAlgorithm, input, certVerifyMsg.signature)
+		}
 		if err != nil {
 			return err
 		}
@@ -1430,8 +1435,8 @@ func (hs *clientHandshakeState) doTLS13Handshake(msg any) error {
 			hasRequestContext: true,
 			requestContext:    certReq.requestContext,
 		}
-		if chainToSend != nil {
-			for _, certData := range chainToSend.Certificate {
+		if credential != nil {
+			for _, certData := range credential.Certificate {
 				certMsg.certificates = append(certMsg.certificates, certificateEntry{
 					data:           certData,
 					extraExtension: c.config.Bugs.SendExtensionOnCertificate,
@@ -1441,13 +1446,13 @@ func (hs *clientHandshakeState) doTLS13Handshake(msg any) error {
 		hs.writeClientHash(certMsg.marshal())
 		c.writeRecord(recordTypeHandshake, certMsg.marshal())
 
-		if chainToSend != nil {
+		if credential != nil {
 			certVerify := &certificateVerifyMsg{
 				hasSignatureAlgorithm: true,
 			}
 
 			// Determine the hash to sign.
-			privKey := chainToSend.PrivateKey
+			privKey := credential.PrivateKey
 
 			var err error
 			certVerify.signatureAlgorithm, err = selectSignatureAlgorithm(c.vers, privKey, c.config, certReq.signatureAlgorithms)
@@ -1687,7 +1692,7 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 		}
 	}
 
-	var chainToSend *CertificateChain
+	var credential *Credential
 	var certRequested bool
 	certReq, ok := msg.(*certificateRequestMsg)
 	if ok {
@@ -1698,7 +1703,7 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 
 		hs.writeServerHash(certReq.marshal())
 
-		chainToSend = c.config.Chain
+		credential = c.config.Credential
 		msg, err = c.readHandshake()
 		if err != nil {
 			return err
@@ -1717,8 +1722,8 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 	// a certificate to send.
 	if certRequested && !c.config.Bugs.SkipClientCertificate {
 		certMsg := new(certificateMsg)
-		if chainToSend != nil {
-			for _, certData := range chainToSend.Certificate {
+		if credential != nil {
+			for _, certData := range credential.Certificate {
 				certMsg.certificates = append(certMsg.certificates, certificateEntry{
 					data: certData,
 				})
@@ -1755,13 +1760,13 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 		hs.masterSecret = masterFromPreMasterSecret(c.vers, hs.suite, preMasterSecret, hs.hello.random, hs.serverHello.random)
 	}
 
-	if chainToSend != nil {
+	if credential != nil {
 		certVerify := &certificateVerifyMsg{
 			hasSignatureAlgorithm: c.vers >= VersionTLS12,
 		}
 
 		// Determine the hash to sign.
-		privKey := c.config.Chain.PrivateKey
+		privKey := c.config.Credential.PrivateKey
 
 		if certVerify.hasSignatureAlgorithm {
 			certVerify.signatureAlgorithm, err = selectSignatureAlgorithm(c.vers, privKey, c.config, certReq.signatureAlgorithms)
@@ -1836,7 +1841,7 @@ func (hs *clientHandshakeState) verifyCertificates(certMsg *certificateMsg) erro
 				c.sendAlert(alertIllegalParameter)
 				return errors.New("tls: non-leaf certificate has a delegated credential")
 			}
-			if c.config.Bugs.DisableDelegatedCredentials {
+			if len(c.config.DelegatedCredentialAlgorithms) == 0 {
 				c.sendAlert(alertIllegalParameter)
 				return errors.New("tls: server sent delegated credential without it being requested")
 			}
@@ -1886,20 +1891,17 @@ func (hs *clientHandshakeState) verifyCertificates(certMsg *certificateMsg) erro
 			return errors.New("tls: failed to parse public key from delegated credential: " + err.Error())
 		}
 
-		verifier, err := getSigner(c.vers, hs.peerPublicKey, c.config, dc.algorithm, true)
-		if err != nil {
-			c.sendAlert(alertBadCertificate)
-			return errors.New("tls: failed to get verifier for delegated credential: " + err.Error())
-		}
-
-		if err := verifier.verifyMessage(leafPublicKey, delegatedCredentialSignedMessage(dc.signedBytes, dc.algorithm, certs[0].Raw), dc.signature); err != nil {
+		signedMsg := delegatedCredentialSignedMessage(dc.signedBytes, dc.algorithm, certs[0].Raw)
+		if err := verifyMessage(c.vers, leafPublicKey, c.config, dc.algorithm, signedMsg, dc.signature); err != nil {
 			c.sendAlert(alertBadCertificate)
 			return errors.New("tls: failed to verify delegated credential: " + err.Error())
 		}
-	} else if c.config.Bugs.ExpectDelegatedCredentials {
-		c.sendAlert(alertInternalError)
-		return errors.New("tls: delegated credentials missing")
+		hs.peerIsDC = true
 	} else {
+		if c.config.Bugs.ExpectDelegatedCredentials {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: delegated credentials missing")
+		}
 		hs.peerPublicKey = leafPublicKey
 	}
 
