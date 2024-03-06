@@ -52,7 +52,6 @@ test_support_sources = [
     "src/crypto/rsa_extra/internal.h",
     "src/crypto/spx/address.h",
     "src/crypto/spx/fors.h",
-    "src/crypto/spx/internal.h",
     "src/crypto/spx/merkle.h",
     "src/crypto/spx/params.h",
     "src/crypto/spx/spx_util.h",
