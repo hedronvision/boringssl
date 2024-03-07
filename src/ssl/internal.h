@@ -714,12 +714,11 @@ bool ssl_cipher_requires_server_key_exchange(const SSL_CIPHER *cipher);
 size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher);
 
 // ssl_choose_tls13_cipher returns an |SSL_CIPHER| corresponding with the best
-// available from |cipher_suites| compatible with |version|, |group_id|, and
-// |policy|. It returns NULL if there isn't a compatible cipher. |has_aes_hw|
-// indicates if the choice should be made as if support for AES in hardware
-// is available.
+// available from |cipher_suites| compatible with |version| and |policy|. It
+// returns NULL if there isn't a compatible cipher. |has_aes_hw| indicates if
+// the choice should be made as if support for AES in hardware is available.
 const SSL_CIPHER *ssl_choose_tls13_cipher(CBS cipher_suites, bool has_aes_hw,
-                                          uint16_t version, uint16_t group_id,
+                                          uint16_t version,
                                           enum ssl_compliance_policy_t policy);
 
 // ssl_tls13_cipher_meets_policy returns true if |cipher_id| is acceptable given
@@ -3190,6 +3189,15 @@ struct SSL_CONFIG {
   // alps_use_new_codepoint if set indicates we use new ALPS extension codepoint
   // to negotiate and convey application settings.
   bool alps_use_new_codepoint : 1;
+
+  // check_client_certificate_type indicates whether the client, in TLS 1.2 and
+  // below, will check its certificate against the server's requested
+  // certificate types.
+  bool check_client_certificate_type : 1;
+
+  // check_ecdsa_curve indicates whether the server, in TLS 1.2 and below, will
+  // check its certificate against the client's supported ECDSA curves.
+  bool check_ecdsa_curve : 1;
 };
 
 // From RFC 8446, used in determining PSK modes.

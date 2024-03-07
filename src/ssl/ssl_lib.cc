@@ -705,7 +705,9 @@ SSL_CONFIG::SSL_CONFIG(SSL *ssl_arg)
       jdk11_workaround(false),
       quic_use_legacy_codepoint(false),
       permute_extensions(false),
-      alps_use_new_codepoint(false) {
+      alps_use_new_codepoint(false),
+      check_client_certificate_type(true),
+      check_ecdsa_curve(true) {
   assert(ssl);
 }
 
@@ -2671,7 +2673,8 @@ int SSL_set_quic_method(SSL *ssl, const SSL_QUIC_METHOD *quic_method) {
 
 int SSL_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
                          CRYPTO_EX_dup *dup_unused, CRYPTO_EX_free *free_func) {
-  return CRYPTO_get_ex_new_index(&g_ex_data_class_ssl, argl, argp, free_func);
+  return CRYPTO_get_ex_new_index_ex(&g_ex_data_class_ssl, argl, argp,
+                                    free_func);
 }
 
 int SSL_set_ex_data(SSL *ssl, int idx, void *data) {
@@ -2685,7 +2688,7 @@ void *SSL_get_ex_data(const SSL *ssl, int idx) {
 int SSL_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
                              CRYPTO_EX_dup *dup_unused,
                              CRYPTO_EX_free *free_func) {
-  return CRYPTO_get_ex_new_index(&g_ex_data_class_ssl_ctx, argl, argp,
+  return CRYPTO_get_ex_new_index_ex(&g_ex_data_class_ssl_ctx, argl, argp,
                                  free_func);
 }
 
@@ -3038,6 +3041,20 @@ void SSL_set_jdk11_workaround(SSL *ssl, int enable) {
     return;
   }
   ssl->config->jdk11_workaround = !!enable;
+}
+
+void SSL_set_check_client_certificate_type(SSL *ssl, int enable) {
+  if (!ssl->config) {
+    return;
+  }
+  ssl->config->check_client_certificate_type = !!enable;
+}
+
+void SSL_set_check_ecdsa_curve(SSL *ssl, int enable) {
+  if (!ssl->config) {
+    return;
+  }
+  ssl->config->check_ecdsa_curve = !!enable;
 }
 
 void SSL_set_quic_use_legacy_codepoint(SSL *ssl, int use_legacy) {
