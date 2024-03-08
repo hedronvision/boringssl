@@ -521,6 +521,7 @@ add_library(
   src/ssl/ssl_buffer.cc
   src/ssl/ssl_cert.cc
   src/ssl/ssl_cipher.cc
+  src/ssl/ssl_credential.cc
   src/ssl/ssl_file.cc
   src/ssl/ssl_key_share.cc
   src/ssl/ssl_lib.cc
