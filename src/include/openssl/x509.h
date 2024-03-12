@@ -254,9 +254,9 @@ OPENSSL_EXPORT void X509_get0_uids(const X509 *x509,
 // should not be accepted.
 #define EXFLAG_CRITICAL 0x200
 // EXFLAG_SS indicates the certificate is likely self-signed. That is, if it is
-// self-issued, its authority key identifer (if any) matches itself, and its key
-// usage extension (if any) allows certificate signatures. The signature itself
-// is not checked in computing this bit.
+// self-issued, its authority key identifier (if any) matches itself, and its
+// key usage extension (if any) allows certificate signatures. The signature
+// itself is not checked in computing this bit.
 #define EXFLAG_SS 0x2000
 
 // X509_get_extension_flags decodes a set of extensions from |x509| and returns
@@ -3022,6 +3022,9 @@ OPENSSL_EXPORT int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store,
 // |X509_STORE_CTX_get1_chain| may be used to return the verified certificate
 // chain. On error, |X509_STORE_CTX_get_error| may be used to return additional
 // error information.
+//
+// WARNING: Most failure conditions from this function do not use the error
+// queue. Use |X509_STORE_CTX_get_error| to determine the cause of the error.
 OPENSSL_EXPORT int X509_verify_cert(X509_STORE_CTX *ctx);
 
 // X509_STORE_CTX_get0_chain, after a successful |X509_verify_cert| call,
