@@ -1016,7 +1016,8 @@
   ], 
   "pki_headers": [
     "src/include/openssl/pki/certificate.h", 
-    "src/include/openssl/pki/signature_verify_cache.h"
+    "src/include/openssl/pki/signature_verify_cache.h", 
+    "src/include/openssl/pki/verify_error.h"
   ], 
   "pki_internal_headers": [
     "src/pki/cert_error_id.h", 

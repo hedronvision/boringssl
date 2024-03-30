@@ -693,6 +693,7 @@ crypto_sources_nasm = [
 pki_headers = [
     "src/include/openssl/pki/certificate.h",
     "src/include/openssl/pki/signature_verify_cache.h",
+    "src/include/openssl/pki/verify_error.h",
 ]
 
 pki_internal_headers = [
