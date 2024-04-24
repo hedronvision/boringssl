@@ -1484,6 +1484,8 @@ pki_test_data = [
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-eku-server-gated-crypto/sha256-eku-clientAuth.test",
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-eku-server-gated-crypto/sha256-eku-serverAuth-strict.test",
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-eku-server-gated-crypto/sha256-eku-serverAuth.test",
+    "src/pki/testdata/verify_certificate_chain_unittest/intermediate-invalid-spki/chain.pem",
+    "src/pki/testdata/verify_certificate_chain_unittest/intermediate-invalid-spki/main.test",
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-lacks-basic-constraints/chain.pem",
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-lacks-basic-constraints/main.test",
     "src/pki/testdata/verify_certificate_chain_unittest/intermediate-lacks-signing-key-usage/chain.pem",
