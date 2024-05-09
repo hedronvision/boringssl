@@ -12,6 +12,7 @@ test_support_sources = [
     "src/crypto/curve25519/curve25519_tables.h",
     "src/crypto/curve25519/internal.h",
     "src/crypto/des/internal.h",
+    "src/crypto/dilithium/internal.h",
     "src/crypto/dsa/internal.h",
     "src/crypto/ec_extra/internal.h",
     "src/crypto/err/internal.h",
@@ -154,6 +155,7 @@ crypto_test_sources = [
     "src/crypto/curve25519/x25519_test.cc",
     "src/crypto/dh_extra/dh_test.cc",
     "src/crypto/digest_extra/digest_test.cc",
+    "src/crypto/dilithium/dilithium_test.cc",
     "src/crypto/dsa/dsa_test.cc",
     "src/crypto/ecdh_extra/ecdh_test.cc",
     "src/crypto/err/err_test.cc",
@@ -246,6 +248,7 @@ pki_test_sources = [
     "src/pki/verify_certificate_chain_unittest.cc",
     "src/pki/verify_name_match_unittest.cc",
     "src/pki/verify_signed_data_unittest.cc",
+    "src/pki/verify_unittest.cc",
 ]
 
 crypto_test_data = [
@@ -282,6 +285,7 @@ crypto_test_data = [
     "src/crypto/cipher_extra/test/nist_cavp/tdes_ecb.txt",
     "src/crypto/cipher_extra/test/xchacha20_poly1305_tests.txt",
     "src/crypto/curve25519/ed25519_tests.txt",
+    "src/crypto/dilithium/dilithium_tests.txt",
     "src/crypto/ecdh_extra/ecdh_tests.txt",
     "src/crypto/evp/evp_tests.txt",
     "src/crypto/evp/scrypt_tests.txt",
@@ -1897,7 +1901,15 @@ pki_test_data = [
     "src/pki/testdata/verify_signed_data_unittest/rsa-pss-sha256.pem",
     "src/pki/testdata/verify_signed_data_unittest/rsa-using-ec-key.pem",
     "src/pki/testdata/verify_signed_data_unittest/rsa2048-pkcs1-sha512.pem",
+    "src/pki/testdata/verify_unittest/google-intermediate1.der",
+    "src/pki/testdata/verify_unittest/google-intermediate2.der",
     "src/pki/testdata/verify_unittest/google-leaf.der",
+    "src/pki/testdata/verify_unittest/lencr-intermediate-r3.der",
+    "src/pki/testdata/verify_unittest/lencr-leaf.der",
+    "src/pki/testdata/verify_unittest/lencr-root-dst-x3.der",
+    "src/pki/testdata/verify_unittest/lencr-root-x1-cross-signed.der",
+    "src/pki/testdata/verify_unittest/lencr-root-x1.der",
+    "src/pki/testdata/verify_unittest/mozilla_roots.der",
     "src/pki/testdata/verify_unittest/self-issued.pem",
 ]
 
