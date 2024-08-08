@@ -478,6 +478,7 @@ const Flag<TestConfig> *FindFlag(const char *name) {
                 &TestConfig::early_write_after_message),
         BoolFlag("-fips-202205", &TestConfig::fips_202205),
         BoolFlag("-wpa-202304", &TestConfig::wpa_202304),
+        BoolFlag("-cnsa-202407", &TestConfig::cnsa_202407),
         BoolFlag("-no-check-client-certificate-type",
                  &TestConfig::no_check_client_certificate_type),
         BoolFlag("-no-check-ecdsa-curve", &TestConfig::no_check_ecdsa_curve),
@@ -2096,7 +2097,9 @@ bssl::UniquePtr<SSL> TestConfig::NewSSL(
   if (enable_ech_grease) {
     SSL_set_enable_ech_grease(ssl.get(), 1);
   }
-  if (static_cast<int>(fips_202205) + static_cast<int>(wpa_202304) > 1) {
+  if (static_cast<int>(fips_202205) + static_cast<int>(wpa_202304) +
+          static_cast<int>(cnsa_202407) >
+      1) {
     fprintf(stderr, "Multiple policy options given\n");
     return nullptr;
   }
@@ -2107,6 +2110,11 @@ bssl::UniquePtr<SSL> TestConfig::NewSSL(
   }
   if (wpa_202304 && !SSL_set_compliance_policy(
                          ssl.get(), ssl_compliance_policy_wpa3_192_202304)) {
+    fprintf(stderr, "SSL_set_compliance_policy failed\n");
+    return nullptr;
+  }
+  if (cnsa_202407 && !SSL_set_compliance_policy(
+                         ssl.get(), ssl_compliance_policy_cnsa_202407)) {
     fprintf(stderr, "SSL_set_compliance_policy failed\n");
     return nullptr;
   }
@@ -2203,6 +2211,10 @@ bssl::UniquePtr<SSL> TestConfig::NewSSL(
   }
   if (min_version != 0 &&
       !SSL_set_min_proto_version(ssl.get(), min_version)) {
+    return nullptr;
+  }
+  if (is_dtls && max_version == 0 &&
+      !SSL_set_max_proto_version(ssl.get(), DTLS1_3_EXPERIMENTAL_VERSION)) {
     return nullptr;
   }
   if (max_version != 0 &&
