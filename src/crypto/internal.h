@@ -217,7 +217,9 @@ typedef __uint128_t uint128_t;
 // __uint128_t division depends on intrinsics in the compiler runtime. Those
 // intrinsics are missing in clang-cl (https://crbug.com/787617) and nanolibc.
 // These may be bugs in the toolchain definition, but just disable it for now.
-#if !defined(_MSC_VER) && !defined(OPENSSL_NANOLIBC)
+// EDK2's toolchain is missing __udivti3 (b/339380897) so cannot support
+// 128-bit division currently.
+#if !defined(_MSC_VER) && !defined(OPENSSL_NANOLIBC) && !defined(__EDK2_BORINGSSL__)
 #define BORINGSSL_CAN_DIVIDE_UINT128
 #endif
 #endif
@@ -1388,13 +1390,13 @@ OPENSSL_INLINE int boringssl_fips_break_test(const char *test) {
 //     ECX for CPUID where EAX = 1
 //     Bit 11 is used to indicate AMD XOP support, not SDBG
 //   Index 2:
-//     EBX for CPUID where EAX = 7
+//     EBX for CPUID where EAX = 7, ECX = 0
 //   Index 3:
-//     ECX for CPUID where EAX = 7
+//     ECX for CPUID where EAX = 7, ECX = 0
 //
-// Note: the CPUID bits are pre-adjusted for the OSXSAVE bit and the YMM and XMM
-// bits in XCR0, so it is not necessary to check those. (WARNING: See caveats
-// in cpu_intel.c.)
+// Note: the CPUID bits are pre-adjusted for the OSXSAVE bit and the XMM, YMM,
+// and AVX512 bits in XCR0, so it is not necessary to check those. (WARNING: See
+// caveats in cpu_intel.c.)
 //
 // From C, this symbol should only be accessed with |OPENSSL_get_ia32cap|.
 extern uint32_t OPENSSL_ia32cap_P[4];

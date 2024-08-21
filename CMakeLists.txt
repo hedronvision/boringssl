@@ -376,6 +376,7 @@ add_library(
   src/crypto/kyber/kyber.c
   src/crypto/lhash/lhash.c
   src/crypto/mem.c
+  src/crypto/mldsa/mldsa.c
   src/crypto/obj/obj.c
   src/crypto/obj/obj_xref.c
   src/crypto/pem/pem_all.c
