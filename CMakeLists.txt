@@ -398,12 +398,14 @@ add_library(
   src/crypto/poly1305/poly1305_vec.c
   src/crypto/pool/pool.c
   src/crypto/rand_extra/deterministic.c
+  src/crypto/rand_extra/fork_detect.c
   src/crypto/rand_extra/forkunsafe.c
   src/crypto/rand_extra/getentropy.c
   src/crypto/rand_extra/ios.c
   src/crypto/rand_extra/passive.c
   src/crypto/rand_extra/rand_extra.c
   src/crypto/rand_extra/trusty.c
+  src/crypto/rand_extra/urandom.c
   src/crypto/rand_extra/windows.c
   src/crypto/rc4/rc4.c
   src/crypto/refcount.c
