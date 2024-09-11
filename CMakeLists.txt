@@ -14,7 +14,7 @@
 
 # This file is created by generate_build_files.py. Do not edit manually.
 
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)
 
 project(BoringSSL LANGUAGES C CXX)
 
@@ -414,6 +414,7 @@ add_library(
   src/crypto/rsa_extra/rsa_asn1.c
   src/crypto/rsa_extra/rsa_crypt.c
   src/crypto/rsa_extra/rsa_print.c
+  src/crypto/sha/sha1.c
   src/crypto/siphash/siphash.c
   src/crypto/spx/spx.c
   src/crypto/spx/spx_address.c
