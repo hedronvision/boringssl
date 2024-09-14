@@ -415,7 +415,13 @@ add_library(
   src/crypto/rsa_extra/rsa_crypt.c
   src/crypto/rsa_extra/rsa_print.c
   src/crypto/sha/sha1.c
+  src/crypto/sha/sha256.c
   src/crypto/siphash/siphash.c
+  src/crypto/slhdsa/fors.c
+  src/crypto/slhdsa/merkle.c
+  src/crypto/slhdsa/slhdsa.c
+  src/crypto/slhdsa/thash.c
+  src/crypto/slhdsa/wots.c
   src/crypto/spx/spx.c
   src/crypto/spx/spx_address.c
   src/crypto/spx/spx_fors.c
