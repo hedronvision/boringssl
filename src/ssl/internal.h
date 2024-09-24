@@ -2854,6 +2854,10 @@ struct SSL3_STATE {
   enum ssl_encryption_level_t read_level = ssl_encryption_initial;
   enum ssl_encryption_level_t write_level = ssl_encryption_initial;
 
+  // version is the protocol version, or zero if the version has not yet been
+  // set.
+  uint16_t version = 0;
+
   // early_data_skipped is the amount of early data that has been skipped by the
   // record layer.
   uint16_t early_data_skipped = 0;
@@ -2874,10 +2878,6 @@ struct SSL3_STATE {
   // skip_early_data instructs the record layer to skip unexpected early data
   // messages when 0RTT is rejected.
   bool skip_early_data : 1;
-
-  // have_version is true if the connection's final version is known. Otherwise
-  // the version has not been negotiated yet.
-  bool have_version : 1;
 
   // v2_hello_done is true if the peer's V2ClientHello, if any, has been handled
   // and future messages should use the record layer.
@@ -3949,9 +3949,6 @@ struct ssl_st {
   // handshake completes.  (If you have the |SSL_HANDSHAKE| object at hand, use
   // that instead, and skip the null check.)
   bssl::UniquePtr<bssl::SSL_CONFIG> config;
-
-  // version is the protocol version.
-  uint16_t version = 0;
 
   uint16_t max_send_fragment = 0;
 

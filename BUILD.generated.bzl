@@ -458,6 +458,7 @@ crypto_sources = [
     "src/crypto/rsa_extra/rsa_print.c",
     "src/crypto/sha/sha1.c",
     "src/crypto/sha/sha256.c",
+    "src/crypto/sha/sha512.c",
     "src/crypto/siphash/siphash.c",
     "src/crypto/slhdsa/fors.c",
     "src/crypto/slhdsa/merkle.c",

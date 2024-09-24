@@ -4151,8 +4151,15 @@ static const char *GetVersionName(uint16_t version) {
 }
 
 TEST_P(SSLVersionTest, Version) {
-  ASSERT_TRUE(Connect());
+  ASSERT_TRUE(CreateClientAndServer(&client_, &server_, client_ctx_.get(),
+                                    server_ctx_.get()));
+  // Before the handshake, |SSL_version| reports some placeholder value.
+  const uint16_t placeholder = is_dtls() ? DTLS1_2_VERSION : TLS1_2_VERSION;
+  EXPECT_EQ(SSL_version(client_.get()), placeholder);
+  EXPECT_EQ(SSL_version(server_.get()), placeholder);
 
+  // After the handshake, |SSL_version| reports the version.
+  ASSERT_TRUE(CompleteHandshakes(client_.get(), server_.get()));
   EXPECT_EQ(SSL_version(client_.get()), version());
   EXPECT_EQ(SSL_version(server_.get()), version());
 
@@ -4168,6 +4175,12 @@ TEST_P(SSLVersionTest, Version) {
       SSL_SESSION_get_version(SSL_get_session(server_.get()));
   EXPECT_EQ(strcmp(version_name, client_name), 0);
   EXPECT_EQ(strcmp(version_name, server_name), 0);
+
+  // |SSL_clear| should reset the |SSL|s to the original state.
+  ASSERT_TRUE(SSL_clear(client_.get()));
+  ASSERT_TRUE(SSL_clear(server_.get()));
+  EXPECT_EQ(SSL_version(client_.get()), placeholder);
+  EXPECT_EQ(SSL_version(server_.get()), placeholder);
 }
 
 // Tests that that |SSL_get_pending_cipher| is available during the ALPN
@@ -9735,6 +9748,66 @@ TEST_P(SSLVersionTest, GetIVs) {
       EXPECT_FALSE(server_ivs_ok);
     }
   }
+}
+
+TEST(SSLTest, EarlyDataVersionMismatch) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  bssl::UniquePtr<SSL_CTX> server_ctx =
+      CreateContextWithTestCertificate(TLS_method());
+  ASSERT_TRUE(server_ctx);
+  SSL_CTX_set_early_data_enabled(client_ctx.get(), 1);
+  SSL_CTX_set_early_data_enabled(server_ctx.get(), 1);
+  SSL_CTX_set_session_cache_mode(client_ctx.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_set_session_cache_mode(server_ctx.get(), SSL_SESS_CACHE_BOTH);
+
+  bssl::UniquePtr<SSL_SESSION> session =
+      CreateClientSession(client_ctx.get(), server_ctx.get());
+  ASSERT_TRUE(session);
+  EXPECT_TRUE(SSL_SESSION_early_data_capable(session.get()));
+
+  // Turn off TLS 1.3 at the server.
+  SSL_CTX_set_max_proto_version(server_ctx.get(), TLS1_2_VERSION);
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(CreateClientAndServer(&client, &server, client_ctx.get(),
+                                    server_ctx.get()));
+  SSL_set_session(client.get(), session.get());
+
+  // Send the ClientHello. The client should immediately treat the handshake as
+  // successful and offer early data.
+  EXPECT_EQ(1, SSL_do_handshake(client.get()));
+  EXPECT_TRUE(SSL_in_early_data(client.get()));
+
+  // In the early data state, we report the predicted version, so that callers
+  // see self-consistent connection properties.
+  EXPECT_EQ(SSL_version(client.get()), TLS1_3_VERSION);
+  EXPECT_NE(SSL_get0_peer_certificates(client.get()), nullptr);
+
+  // Read the ClientHello and send the ServerHello. The server will (implicitly
+  // by negotiating TLS 1.2) reject early data.
+  EXPECT_EQ(-1, SSL_do_handshake(server.get()));
+  EXPECT_EQ(SSL_ERROR_WANT_READ, SSL_get_error(server.get(), -1));
+
+  // Read the ServerHello. The client will now see the ServerHello and report a
+  // version mismatch. Unlike other 0-RTT rejections, this is fatal, because a
+  // TLS 1.2 server cannot recover from 0-RTT rejection.
+  EXPECT_EQ(-1, SSL_do_handshake(client.get()));
+  EXPECT_EQ(SSL_ERROR_SSL, SSL_get_error(client.get(), -1));
+  EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_SSL,
+                          SSL_R_WRONG_VERSION_ON_EARLY_DATA));
+
+  // |SSL_version| should continue reporting self-consistent state until the
+  // caller calls |SSL_reset_early_data_reject|.
+  //
+  // TLS 1.3 to TLS 1.2 is not the most interesting version-related 0-RTT
+  // rejection because it is fatal to the connection anyway. Once there are two
+  // post-TLS-1.3 versions, or if we implement DTLS 1.3 0-RTT (where a DTLS 1.2
+  // server will skip over early data naturally), those will make for better
+  // tests. In particular, early_data accept is signaled in EncryptedExtensions,
+  // but the new version is learned at ServerHello. Though an implementation
+  // could already infer based on the version that early data will be rejected.
+  EXPECT_EQ(SSL_version(client.get()), TLS1_3_VERSION);
+  EXPECT_NE(SSL_get0_peer_certificates(client.get()), nullptr);
 }
 
 }  // namespace
