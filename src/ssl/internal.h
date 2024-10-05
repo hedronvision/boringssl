@@ -672,7 +672,7 @@ Span<const SSL_CIPHER> AllCiphers();
 bool ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
                              size_t *out_mac_secret_len,
                              size_t *out_fixed_iv_len, const SSL_CIPHER *cipher,
-                             uint16_t version, bool is_dtls);
+                             uint16_t version);
 
 // ssl_get_handshake_digest returns the |EVP_MD| corresponding to |version| and
 // |cipher|.
@@ -827,7 +827,7 @@ class RecordNumberEncrypter {
 // encrypt an SSL connection.
 class SSLAEADContext {
  public:
-  SSLAEADContext(uint16_t version, bool is_dtls, const SSL_CIPHER *cipher);
+  explicit SSLAEADContext(const SSL_CIPHER *cipher);
   ~SSLAEADContext();
   static constexpr bool kAllowUniquePtr = true;
 
@@ -835,38 +835,23 @@ class SSLAEADContext {
   SSLAEADContext &operator=(const SSLAEADContext &&) = delete;
 
   // CreateNullCipher creates an |SSLAEADContext| for the null cipher.
-  static UniquePtr<SSLAEADContext> CreateNullCipher(bool is_dtls);
+  static UniquePtr<SSLAEADContext> CreateNullCipher();
 
   // Create creates an |SSLAEADContext| using the supplied key material. It
   // returns nullptr on error. Only one of |Open| or |Seal| may be used with the
-  // resulting object, depending on |direction|. |version| is the normalized
-  // protocol version, so DTLS 1.0 is represented as 0x0301, not 0xffef.
+  // resulting object, depending on |direction|. |version| is the wire version.
   static UniquePtr<SSLAEADContext> Create(enum evp_aead_direction_t direction,
-                                          uint16_t version, bool is_dtls,
+                                          uint16_t version,
                                           const SSL_CIPHER *cipher,
                                           Span<const uint8_t> enc_key,
                                           Span<const uint8_t> mac_key,
                                           Span<const uint8_t> fixed_iv);
 
   // CreatePlaceholderForQUIC creates a placeholder |SSLAEADContext| for the
-  // given cipher and version. The resulting object can be queried for various
-  // properties but cannot encrypt or decrypt data.
+  // given cipher. The resulting object can be queried for various properties
+  // but cannot encrypt or decrypt data.
   static UniquePtr<SSLAEADContext> CreatePlaceholderForQUIC(
-      uint16_t version, const SSL_CIPHER *cipher);
-
-  // SetVersionIfNullCipher sets the version the SSLAEADContext for the null
-  // cipher, to make version-specific determinations in the record layer prior
-  // to a cipher being selected.
-  void SetVersionIfNullCipher(uint16_t version);
-
-  // ProtocolVersion returns the protocol version associated with this
-  // SSLAEADContext. It can only be called once |version_| has been set to a
-  // valid value.
-  uint16_t ProtocolVersion() const;
-
-  // RecordVersion returns the record version that should be used with this
-  // SSLAEADContext for record construction and crypto.
-  uint16_t RecordVersion() const;
+      const SSL_CIPHER *cipher);
 
   const SSL_CIPHER *cipher() const { return cipher_; }
 
@@ -953,13 +938,9 @@ class SSLAEADContext {
   ScopedEVP_AEAD_CTX ctx_;
   // fixed_nonce_ contains any bytes of the nonce that are fixed for all
   // records.
-  uint8_t fixed_nonce_[12];
+  uint8_t fixed_nonce_[12] = {0};
   uint8_t fixed_nonce_len_ = 0, variable_nonce_len_ = 0;
-  // version_ is the wire version that should be used with this AEAD.
-  uint16_t version_;
   UniquePtr<RecordNumberEncrypter> rn_encrypter_;
-  // is_dtls_ is whether DTLS is being used with this AEAD.
-  bool is_dtls_;
   // variable_nonce_included_in_record_ is true if the variable nonce
   // for a record is included as a prefix before the ciphertext.
   bool variable_nonce_included_in_record_ : 1;
@@ -1678,7 +1659,7 @@ struct ssl_credential_st : public bssl::RefCounted<ssl_credential_st> {
   ssl_credential_st &operator=(const ssl_credential_st &) = delete;
 
   // Dup returns a copy of the credential, or nullptr on error. The |ex_data|
-  // values are not copied. This is only used on the default credential, whose
+  // values are not copied. This is only used on the legacy credential, whose
   // |ex_data| is inaccessible.
   bssl::UniquePtr<SSL_CREDENTIAL> Dup() const;
 
@@ -2548,32 +2529,32 @@ struct CERT {
   explicit CERT(const SSL_X509_METHOD *x509_method);
   ~CERT();
 
-  bool is_valid() const { return default_credential != nullptr; }
+  bool is_valid() const { return legacy_credential != nullptr; }
 
   // credentials is the list of credentials to select between. Elements of this
   // array immutable.
   GrowableArray<UniquePtr<SSL_CREDENTIAL>> credentials;
 
-  // default_credential is the credential configured by the legacy,
+  // legacy_credential is the credential configured by the legacy
   // non-credential-based APIs. If IsComplete() returns true, it is appended to
   // the list of credentials.
-  UniquePtr<SSL_CREDENTIAL> default_credential;
+  UniquePtr<SSL_CREDENTIAL> legacy_credential;
 
   // x509_method contains pointers to functions that might deal with |X509|
   // compatibility, or might be a no-op, depending on the application.
   const SSL_X509_METHOD *x509_method = nullptr;
 
-  // x509_chain may contain a parsed copy of |chain[1..]| from the default
+  // x509_chain may contain a parsed copy of |chain[1..]| from the legacy
   // credential. This is only used as a cache in order to implement “get0”
   // functions that return a non-owning pointer to the certificate chain.
   STACK_OF(X509) *x509_chain = nullptr;
 
   // x509_leaf may contain a parsed copy of the first element of |chain| from
-  // the default credential. This is only used as a cache in order to implement
+  // the legacy credential. This is only used as a cache in order to implement
   // “get0” functions that return a non-owning pointer to the certificate chain.
   X509 *x509_leaf = nullptr;
 
-  // x509_stash contains the last |X509| object append to the default
+  // x509_stash contains the last |X509| object append to the legacy
   // credential's chain. This is a workaround for some third-party code that
   // continue to use an |X509| object even after passing ownership with an
   // “add0” function.
@@ -2856,7 +2837,8 @@ struct SSL3_STATE {
   enum ssl_encryption_level_t write_level = ssl_encryption_initial;
 
   // version is the protocol version, or zero if the version has not yet been
-  // set.
+  // set. In clients offering 0-RTT, this version will initially be set to the
+  // early version, then switched to the final version.
   uint16_t version = 0;
 
   // early_data_skipped is the amount of early data that has been skipped by the
