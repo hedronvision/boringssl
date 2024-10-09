@@ -567,72 +567,258 @@ static bool CipherListsEqual(SSL_CTX *ctx,
   return true;
 }
 
-TEST(GrowableArrayTest, Resize) {
-  GrowableArray<size_t> array;
-  ASSERT_TRUE(array.empty());
-  EXPECT_EQ(array.size(), 0u);
+TEST(ArrayDeathTest, BoundsChecks) {
+  Array<int> array;
+  const int v[] = {1, 2, 3, 4};
+  ASSERT_TRUE(array.CopyFrom(v));
+  EXPECT_DEATH_IF_SUPPORTED(array[4], "");
+}
 
-  ASSERT_TRUE(array.Push(42));
-  ASSERT_TRUE(!array.empty());
-  EXPECT_EQ(array.size(), 1u);
+TEST(VectorTest, Resize) {
+  Vector<size_t> vec;
+  ASSERT_TRUE(vec.empty());
+  EXPECT_EQ(vec.size(), 0u);
+
+  ASSERT_TRUE(vec.Push(42));
+  ASSERT_TRUE(!vec.empty());
+  EXPECT_EQ(vec.size(), 1u);
 
   // Force a resize operation to occur
   for (size_t i = 0; i < 16; i++) {
-    ASSERT_TRUE(array.Push(i + 1));
+    ASSERT_TRUE(vec.Push(i + 1));
   }
 
-  EXPECT_EQ(array.size(), 17u);
+  EXPECT_EQ(vec.size(), 17u);
 
-  // Verify that expected values are still contained in array
-  for (size_t i = 0; i < array.size(); i++) {
-    EXPECT_EQ(array[i], i == 0 ? 42 : i);
+  // Verify that expected values are still contained in vec
+  for (size_t i = 0; i < vec.size(); i++) {
+    EXPECT_EQ(vec[i], i == 0 ? 42 : i);
+  }
+
+  // Clearing the vector should give an empty one.
+  vec.clear();
+  ASSERT_TRUE(vec.empty());
+  EXPECT_EQ(vec.size(), 0u);
+
+  ASSERT_TRUE(vec.Push(42));
+  ASSERT_TRUE(!vec.empty());
+  EXPECT_EQ(vec.size(), 1u);
+  EXPECT_EQ(vec[0], 42u);
+}
+
+TEST(VectorTest, MoveConstructor) {
+  Vector<size_t> vec;
+  for (size_t i = 0; i < 100; i++) {
+    ASSERT_TRUE(vec.Push(i));
+  }
+
+  Vector<size_t> vec_moved(std::move(vec));
+  for (size_t i = 0; i < 100; i++) {
+    EXPECT_EQ(vec_moved[i], i);
   }
 }
 
-TEST(GrowableArrayTest, MoveConstructor) {
-  GrowableArray<size_t> array;
-  for (size_t i = 0; i < 100; i++) {
-    ASSERT_TRUE(array.Push(i));
-  }
-
-  GrowableArray<size_t> array_moved(std::move(array));
-  for (size_t i = 0; i < 100; i++) {
-    EXPECT_EQ(array_moved[i], i);
-  }
-}
-
-TEST(GrowableArrayTest, GrowableArrayContainingGrowableArrays) {
-  // Representative example of a struct that contains a GrowableArray.
+TEST(VectorTest, VectorContainingVectors) {
+  // Representative example of a struct that contains a Vector.
   struct TagAndArray {
     size_t tag;
-    GrowableArray<size_t> array;
+    Vector<size_t> vec;
   };
 
-  GrowableArray<TagAndArray> array;
+  Vector<TagAndArray> vec;
   for (size_t i = 0; i < 100; i++) {
     TagAndArray elem;
     elem.tag = i;
     for (size_t j = 0; j < i; j++) {
-      ASSERT_TRUE(elem.array.Push(j));
+      ASSERT_TRUE(elem.vec.Push(j));
     }
-    ASSERT_TRUE(array.Push(std::move(elem)));
+    ASSERT_TRUE(vec.Push(std::move(elem)));
   }
-  EXPECT_EQ(array.size(), static_cast<size_t>(100));
+  EXPECT_EQ(vec.size(), static_cast<size_t>(100));
 
-  GrowableArray<TagAndArray> array_moved(std::move(array));
-  EXPECT_EQ(array_moved.size(), static_cast<size_t>(100));
+  Vector<TagAndArray> vec_moved(std::move(vec));
+  EXPECT_EQ(vec_moved.size(), static_cast<size_t>(100));
   size_t count = 0;
-  for (const TagAndArray &elem : array_moved) {
+  for (const TagAndArray &elem : vec_moved) {
     // Test the square bracket operator returns the same value as iteration.
-    EXPECT_EQ(&elem, &array_moved[count]);
+    EXPECT_EQ(&elem, &vec_moved[count]);
 
     EXPECT_EQ(elem.tag, count);
-    EXPECT_EQ(elem.array.size(), count);
+    EXPECT_EQ(elem.vec.size(), count);
     for (size_t j = 0; j < count; j++) {
-      EXPECT_EQ(elem.array[j], j);
+      EXPECT_EQ(elem.vec[j], j);
     }
     count++;
   }
+}
+
+TEST(VectorTest, NotDefaultConstructible) {
+  struct NotDefaultConstructible {
+    explicit NotDefaultConstructible(size_t n) { array.Init(n); }
+    Array<int> array;
+  };
+
+  Vector<NotDefaultConstructible> vec;
+  vec.Push(NotDefaultConstructible(0));
+  vec.Push(NotDefaultConstructible(1));
+  vec.Push(NotDefaultConstructible(2));
+  vec.Push(NotDefaultConstructible(3));
+  EXPECT_EQ(vec.size(), 4u);
+  EXPECT_EQ(0u, vec[0].array.size());
+  EXPECT_EQ(1u, vec[1].array.size());
+  EXPECT_EQ(2u, vec[2].array.size());
+  EXPECT_EQ(3u, vec[3].array.size());
+}
+
+TEST(VectorDeathTest, BoundsChecks) {
+  Vector<int> vec;
+  ASSERT_TRUE(vec.Push(1));
+  // Within bounds of the capacity, but not the vector.
+  EXPECT_DEATH_IF_SUPPORTED(vec[1], "");
+  // Not within bounds of the capacity either.
+  EXPECT_DEATH_IF_SUPPORTED(vec[10000], "");
+}
+
+TEST(InplaceVector, Basic) {
+  InplaceVector<int, 4> vec;
+  EXPECT_TRUE(vec.empty());
+  EXPECT_EQ(0u, vec.size());
+  EXPECT_EQ(vec.begin(), vec.end());
+
+  int data3[] = {1, 2, 3};
+  ASSERT_TRUE(vec.TryCopyFrom(data3));
+  EXPECT_FALSE(vec.empty());
+  EXPECT_EQ(3u, vec.size());
+  auto iter = vec.begin();
+  EXPECT_EQ(1, vec[0]);
+  EXPECT_EQ(1, *iter);
+  iter++;
+  EXPECT_EQ(2, vec[1]);
+  EXPECT_EQ(2, *iter);
+  iter++;
+  EXPECT_EQ(3, vec[2]);
+  EXPECT_EQ(3, *iter);
+  iter++;
+  EXPECT_EQ(iter, vec.end());
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(data3));
+
+  InplaceVector<int, 4> vec2 = vec;
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(vec2));
+
+  InplaceVector<int, 4> vec3;
+  vec3 = vec;
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(vec2));
+
+  int data4[] = {1, 2, 3, 4};
+  ASSERT_TRUE(vec.TryCopyFrom(data4));
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(data4));
+
+  int data5[] = {1, 2, 3, 4, 5};
+  EXPECT_FALSE(vec.TryCopyFrom(data5));
+  EXPECT_FALSE(vec.TryResize(5));
+
+  // Shrink the vector.
+  ASSERT_TRUE(vec.TryResize(3));
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(data3));
+
+  // Enlarge it again. The new value should have been value-initialized.
+  ASSERT_TRUE(vec.TryResize(4));
+  EXPECT_EQ(vec[3], 0);
+
+  // Self-assignment should not break the vector. Indirect through a pointer to
+  // avoid tripping a compiler warning.
+  vec.CopyFrom(data4);
+  const auto *ptr = &vec;
+  vec = *ptr;
+  EXPECT_EQ(MakeConstSpan(vec), MakeConstSpan(data4));
+}
+
+TEST(InplaceVectorTest, ComplexType) {
+  InplaceVector<std::vector<int>, 4> vec_of_vecs;
+  const std::vector<int> data[] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+  vec_of_vecs.CopyFrom(data);
+  EXPECT_EQ(MakeConstSpan(vec_of_vecs), MakeConstSpan(data));
+
+  vec_of_vecs.Resize(2);
+  EXPECT_EQ(MakeConstSpan(vec_of_vecs), MakeConstSpan(data, 2));
+
+  vec_of_vecs.Resize(4);
+  EXPECT_EQ(4u, vec_of_vecs.size());
+  EXPECT_EQ(vec_of_vecs[0], data[0]);
+  EXPECT_EQ(vec_of_vecs[1], data[1]);
+  EXPECT_TRUE(vec_of_vecs[2].empty());
+  EXPECT_TRUE(vec_of_vecs[3].empty());
+
+  // Copy-construction.
+  InplaceVector<std::vector<int>, 4> vec_of_vecs2 = vec_of_vecs;
+  EXPECT_EQ(4u, vec_of_vecs2.size());
+  EXPECT_EQ(vec_of_vecs2[0], data[0]);
+  EXPECT_EQ(vec_of_vecs2[1], data[1]);
+  EXPECT_TRUE(vec_of_vecs2[2].empty());
+  EXPECT_TRUE(vec_of_vecs2[3].empty());
+
+  // Copy-assignment.
+  InplaceVector<std::vector<int>, 4> vec_of_vecs3;
+  vec_of_vecs3 = vec_of_vecs;
+  EXPECT_EQ(4u, vec_of_vecs3.size());
+  EXPECT_EQ(vec_of_vecs3[0], data[0]);
+  EXPECT_EQ(vec_of_vecs3[1], data[1]);
+  EXPECT_TRUE(vec_of_vecs3[2].empty());
+  EXPECT_TRUE(vec_of_vecs3[3].empty());
+
+  // Move-construction.
+  InplaceVector<std::vector<int>, 4> vec_of_vecs4 = std::move(vec_of_vecs);
+  EXPECT_EQ(4u, vec_of_vecs4.size());
+  EXPECT_EQ(vec_of_vecs4[0], data[0]);
+  EXPECT_EQ(vec_of_vecs4[1], data[1]);
+  EXPECT_TRUE(vec_of_vecs4[2].empty());
+  EXPECT_TRUE(vec_of_vecs4[3].empty());
+
+  // The elements of the original vector should have been moved-from.
+  EXPECT_EQ(4u, vec_of_vecs.size());
+  for (const auto &vec : vec_of_vecs) {
+    EXPECT_TRUE(vec.empty());
+  }
+
+  // Move-assignment.
+  InplaceVector<std::vector<int>, 4> vec_of_vecs5;
+  vec_of_vecs5 = std::move(vec_of_vecs4);
+  EXPECT_EQ(4u, vec_of_vecs5.size());
+  EXPECT_EQ(vec_of_vecs5[0], data[0]);
+  EXPECT_EQ(vec_of_vecs5[1], data[1]);
+  EXPECT_TRUE(vec_of_vecs5[2].empty());
+  EXPECT_TRUE(vec_of_vecs5[3].empty());
+
+  // The elements of the original vector should have been moved-from.
+  EXPECT_EQ(4u, vec_of_vecs4.size());
+  for (const auto &vec : vec_of_vecs4) {
+    EXPECT_TRUE(vec.empty());
+  }
+
+  std::vector<int> v = {42};
+  vec_of_vecs5.Resize(3);
+  EXPECT_TRUE(vec_of_vecs5.TryPushBack(v));
+  EXPECT_EQ(v, vec_of_vecs5[3]);
+  EXPECT_FALSE(vec_of_vecs5.TryPushBack(v));
+}
+
+TEST(InplaceVectorDeathTest, BoundsChecks) {
+  InplaceVector<int, 4> vec;
+  // The vector is currently empty.
+  EXPECT_DEATH_IF_SUPPORTED(vec[0], "");
+  int data[] = {1, 2, 3};
+  vec.CopyFrom(data);
+  // Some more out-of-bounds elements.
+  EXPECT_DEATH_IF_SUPPORTED(vec[3], "");
+  EXPECT_DEATH_IF_SUPPORTED(vec[4], "");
+  EXPECT_DEATH_IF_SUPPORTED(vec[1000], "");
+  // The vector cannot be resized past the capacity.
+  EXPECT_DEATH_IF_SUPPORTED(vec.Resize(5), "");
+  EXPECT_DEATH_IF_SUPPORTED(vec.ResizeMaybeUninit(5), "");
+  int too_much_data[] = {1, 2, 3, 4, 5};
+  EXPECT_DEATH_IF_SUPPORTED(vec.CopyFrom(too_much_data), "");
+  vec.Resize(4);
+  EXPECT_DEATH_IF_SUPPORTED(vec.PushBack(42), "");
 }
 
 TEST(ReconstructSeqnumTest, Increment) {
