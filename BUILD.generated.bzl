@@ -832,6 +832,7 @@ rust_bssl_crypto = [
     "src/rust/bssl-crypto/src/rand.rs",
     "src/rust/bssl-crypto/src/rsa.rs",
     "src/rust/bssl-crypto/src/scoped.rs",
+    "src/rust/bssl-crypto/src/slhdsa.rs",
     "src/rust/bssl-crypto/src/test_helpers.rs",
     "src/rust/bssl-crypto/src/x25519.rs",
 ]
