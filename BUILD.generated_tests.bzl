@@ -224,6 +224,7 @@ ssl_test_sources = [
     "src/crypto/test/gtest_main.cc",
     "src/ssl/span_test.cc",
     "src/ssl/ssl_c_test.c",
+    "src/ssl/ssl_internal_test.cc",
     "src/ssl/ssl_test.cc",
 ]
 
