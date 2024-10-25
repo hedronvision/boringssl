@@ -378,7 +378,7 @@ add_library(
   src/crypto/md4/md4.c
   src/crypto/md5/md5.c
   src/crypto/mem.c
-  src/crypto/mldsa/mldsa.c
+  src/crypto/mldsa/mldsa.cc
   src/crypto/mlkem/mlkem.cc
   src/crypto/obj/obj.c
   src/crypto/obj/obj_xref.c
