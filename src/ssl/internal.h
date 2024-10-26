@@ -674,6 +674,51 @@ class InplaceVector {
   PackedSize<N> size_ = 0;
 };
 
+// An MRUQueue maintains a queue of up to |N| objects of type |T|. If the queue
+// is at capacity, adding to the queue pops the least recently added element.
+template <typename T, size_t N>
+class MRUQueue {
+ public:
+  static constexpr bool kAllowUniquePtr = true;
+
+  MRUQueue() = default;
+
+  // If we ever need to make this type movable, we could. (The defaults almost
+  // work except we need |start_| to be reset when moved-from.)
+  MRUQueue(const MRUQueue &other) = delete;
+  MRUQueue &operator=(const MRUQueue &other)  = delete;
+
+  bool empty() const { return size() == 0; }
+  size_t size() const { return storage_.size(); }
+
+  T &operator[](size_t i) {
+    BSSL_CHECK(i < size());
+    return storage_[(start_ + i) % N];
+  }
+  const T &operator[](size_t i) const {
+    return (*const_cast<MRUQueue *>(this))[i];
+  }
+
+  void Clear() {
+    storage_.clear();
+    start_ = 0;
+  }
+
+  void PushBack(T t) {
+    if (storage_.size() < N) {
+      assert(start_ == 0);
+      storage_.PushBack(std::move(t));
+    } else {
+      (*this)[0] = std::move(t);
+      start_ = (start_ + 1) % N;
+    }
+  }
+
+ private:
+  InplaceVector<T, N> storage_;
+  PackedSize<N> start_ = 0;
+};
+
 // CBBFinishArray behaves like |CBB_finish| but stores the result in an Array.
 OPENSSL_EXPORT bool CBBFinishArray(CBB *cbb, Array<uint8_t> *out);
 
@@ -1231,7 +1276,6 @@ OPENSSL_EXPORT uint64_t reconstruct_seqnum(uint16_t wire_seq, uint64_t seq_mask,
 
 // Record layer.
 
-// TODO(davidben): Use this type more extensively in the epoch state.
 class DTLSRecordNumber {
  public:
   static constexpr uint64_t kMaxSequence = (uint64_t{1} << 48) - 1;
@@ -1249,6 +1293,13 @@ class DTLSRecordNumber {
   uint64_t combined() const { return combined_; }
   uint16_t epoch() const { return combined_ >> 48; }
   uint64_t sequence() const { return combined_ & kMaxSequence; }
+
+  bool HasNext() const { return sequence() < kMaxSequence; }
+  DTLSRecordNumber Next() const {
+    BSSL_CHECK(HasNext());
+    // This will not overflow into the epoch.
+    return DTLSRecordNumber::FromCombined(combined_ + 1);
+  }
 
  private:
   explicit DTLSRecordNumber(uint64_t combined) : combined_(combined) {}
@@ -1275,6 +1326,8 @@ class RecordNumberEncrypter {
 struct DTLSReadEpoch {
   static constexpr bool kAllowUniquePtr = true;
 
+  // TODO(davidben): This could be made slightly more compact if |bitmap| stored
+  // a DTLSRecordNumber.
   uint16_t epoch = 0;
   UniquePtr<SSLAEADContext> aead;
   UniquePtr<RecordNumberEncrypter> rn_encrypter;
@@ -1284,10 +1337,11 @@ struct DTLSReadEpoch {
 struct DTLSWriteEpoch {
   static constexpr bool kAllowUniquePtr = true;
 
-  uint16_t epoch = 0;
+  uint16_t epoch() const { return next_record.epoch(); }
+
+  DTLSRecordNumber next_record;
   UniquePtr<SSLAEADContext> aead;
   UniquePtr<RecordNumberEncrypter> rn_encrypter;
-  uint64_t next_seq = 0;
 };
 
 // ssl_record_prefix_len returns the length of the prefix before the ciphertext
@@ -1538,7 +1592,7 @@ bool dtls_has_unprocessed_handshake_data(const SSL *ssl);
 // tls_flush_pending_hs_data flushes any handshake plaintext data.
 bool tls_flush_pending_hs_data(SSL *ssl);
 
-struct DTLS_OUTGOING_MESSAGE {
+struct DTLSOutgoingMessage {
   Array<uint8_t> data;
   uint16_t epoch = 0;
   bool is_ccs = false;
@@ -3324,6 +3378,9 @@ class DTLSMessageBitmap {
   // bytes_ contains the unmarked bits. We maintain an invariant: if |bytes_| is
   // not empty, some bit is unset.
   Array<uint8_t> bytes_;
+  // first_unmarked_byte_ is the index of first byte in |bytes_| that is not
+  // 0xff. This is maintained to amortize checking if the message is complete.
+  size_t first_unmarked_byte_ = 0;
 };
 
 struct hm_header_st {
@@ -3334,25 +3391,24 @@ struct hm_header_st {
   uint32_t frag_len;
 };
 
-// An hm_fragment is an incoming DTLS message, possibly not yet assembled.
-struct hm_fragment {
+// An DTLSIncomingMessage is an incoming DTLS message, possibly not yet
+// assembled.
+struct DTLSIncomingMessage {
   static constexpr bool kAllowUniquePtr = true;
 
-  hm_fragment() {}
-  hm_fragment(const hm_fragment &) = delete;
-  hm_fragment &operator=(const hm_fragment &) = delete;
-
-  ~hm_fragment();
+  Span<uint8_t> msg() { return MakeSpan(data).subspan(DTLS1_HM_HEADER_LENGTH); }
+  Span<const uint8_t> msg() const {
+    return MakeSpan(data).subspan(DTLS1_HM_HEADER_LENGTH);
+  }
+  size_t msg_len() const { return msg().size(); }
 
   // type is the type of the message.
   uint8_t type = 0;
   // seq is the sequence number of this message.
   uint16_t seq = 0;
-  // msg_len is the length of the message body.
-  uint32_t msg_len = 0;
-  // data is a pointer to the message, including message header. It has length
-  // |DTLS1_HM_HEADER_LENGTH| + |msg_len|.
-  uint8_t *data = nullptr;
+  // data contains the message, including the message header of length
+  // |DTLS1_HM_HEADER_LENGTH|.
+  Array<uint8_t> data;
   // reassembly tracks which parts of the message have been received.
   DTLSMessageBitmap reassembly;
 };
@@ -3417,11 +3473,11 @@ struct DTLS1_STATE {
   // yet to be processed. The front of the ring buffer is message number
   // |handshake_read_seq|, at position |handshake_read_seq| %
   // |SSL_MAX_HANDSHAKE_FLIGHT|.
-  UniquePtr<hm_fragment> incoming_messages[SSL_MAX_HANDSHAKE_FLIGHT];
+  UniquePtr<DTLSIncomingMessage> incoming_messages[SSL_MAX_HANDSHAKE_FLIGHT];
 
   // outgoing_messages is the queue of outgoing messages from the last handshake
   // flight.
-  InplaceVector<DTLS_OUTGOING_MESSAGE, SSL_MAX_HANDSHAKE_FLIGHT>
+  InplaceVector<DTLSOutgoingMessage, SSL_MAX_HANDSHAKE_FLIGHT>
       outgoing_messages;
 
   // outgoing_written is the number of outgoing messages that have been
