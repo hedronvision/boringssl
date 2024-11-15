@@ -72,11 +72,11 @@ BSSL_NAMESPACE_BEGIN
 
 // DTLS1_MTU_TIMEOUTS is the maximum number of timeouts to expire
 // before starting to decrease the MTU.
-#define DTLS1_MTU_TIMEOUTS                     2
+#define DTLS1_MTU_TIMEOUTS 2
 
 // DTLS1_MAX_TIMEOUTS is the maximum number of timeouts to expire
 // before failing the DTLS handshake.
-#define DTLS1_MAX_TIMEOUTS                     12
+#define DTLS1_MAX_TIMEOUTS 12
 
 DTLS1_STATE::DTLS1_STATE()
     : has_change_cipher_spec(false),
@@ -122,7 +122,7 @@ void dtls1_free(SSL *ssl) {
 }
 
 void dtls1_start_timer(SSL *ssl) {
-  // If timer is not set, initialize duration (by default, 1 second)
+  // If timer is not set, initialize duration.
   if (ssl->d1->next_timeout.tv_sec == 0 && ssl->d1->next_timeout.tv_usec == 0) {
     ssl->d1->timeout_duration_ms = ssl->initial_timeout_duration_ms;
   }

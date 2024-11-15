@@ -76,7 +76,9 @@ func (c *Conn) serverHandshake() error {
 		// ServerHello and look for the resulting client protocol_version alert.
 		if c.vers == VersionSSL30 {
 			c.writeRecord(recordTypeHandshake, hs.hello.marshal())
-			c.flushHandshake()
+			if err := c.flushHandshake(); err != nil {
+				return err
+			}
 			if _, err := c.readHandshake(); err != nil {
 				return err
 			}
@@ -100,17 +102,10 @@ func (c *Conn) serverHandshake() error {
 			if err := hs.sendFinished(c.firstFinished[:], isResume); err != nil {
 				return err
 			}
-			// Most retransmits are triggered by a timeout, but the final
-			// leg of the handshake is retransmited upon re-receiving a
-			// Finished.
-			if err := c.simulatePacketLoss(func() {
-				c.sendHandshakeSeq--
-				c.writeRecord(recordTypeHandshake, hs.finishedBytes)
-				c.flushHandshake()
-			}); err != nil {
+			if err := hs.readFinished(nil, isResume); err != nil {
 				return err
 			}
-			if err := hs.readFinished(nil, isResume); err != nil {
+			if err := c.ackHandshake(); err != nil {
 				return err
 			}
 			c.didResume = true
@@ -171,9 +166,6 @@ func (hs *serverHandshakeState) readClientHello() error {
 	config := hs.c.config
 	c := hs.c
 
-	if err := c.simulatePacketLoss(nil); err != nil {
-		return err
-	}
 	msg, err := c.readHandshake()
 	if err != nil {
 		return err
@@ -324,11 +316,10 @@ func (hs *serverHandshakeState) readClientHello() error {
 			return errors.New("dtls: short read from Rand: " + err.Error())
 		}
 		c.writeRecord(recordTypeHandshake, helloVerifyRequest.marshal())
-		c.flushHandshake()
-
-		if err := c.simulatePacketLoss(nil); err != nil {
+		if err := c.flushHandshake(); err != nil {
 			return err
 		}
+
 		msg, err := c.readHandshake()
 		if err != nil {
 			return err
@@ -409,6 +400,9 @@ func (hs *serverHandshakeState) readClientHello() error {
 		if len(hs.clientHello.sessionTicket) > 0 {
 			return fmt.Errorf("tls: client offered an unexpected session ticket")
 		}
+	}
+	if config.Bugs.ExpectNoTLS12TicketSupport && hs.clientHello.ticketSupported {
+		return fmt.Errorf("tls: client sent unexpected session ticket extension")
 	}
 
 	if config.Bugs.ExpectNoTLS13PSK && len(hs.clientHello.pskIdentities) > 0 {
@@ -694,6 +688,10 @@ func (hs *serverHandshakeState) doTLS13Handshake() error {
 		hs.finishedHash.addEntropy(hs.finishedHash.zeroSecret())
 	}
 
+	if hs.clientHello.hasEarlyData && c.isDTLS {
+		return errors.New("tls: early data extension received in DTLS")
+	}
+
 	hs.hello.hasKeyShare = true
 	if hs.sessionState != nil && config.Bugs.NegotiatePSKResumption {
 		hs.hello.hasKeyShare = false
@@ -788,7 +786,9 @@ ResendHelloRetryRequest:
 		} else {
 			c.writeRecord(recordTypeHandshake, helloRetryRequest.marshal())
 		}
-		c.flushHandshake()
+		if err := c.flushHandshake(); err != nil {
+			return err
+		}
 
 		if !c.config.Bugs.SkipChangeCipherSpec {
 			c.writeRecord(recordTypeChangeCipherSpec, []byte{1})
@@ -949,7 +949,7 @@ ResendHelloRetryRequest:
 			}
 
 			sessionCipher := cipherSuiteFromID(hs.sessionState.cipherSuite)
-			if err := c.useInTrafficSecret(encryptionEarlyData, c.wireVersion, sessionCipher, earlyTrafficSecret); err != nil {
+			if err := c.useInTrafficSecret(uint16(encryptionEarlyData), c.wireVersion, sessionCipher, earlyTrafficSecret); err != nil {
 				return err
 			}
 
@@ -1047,7 +1047,6 @@ ResendHelloRetryRequest:
 	} else {
 		c.writeRecord(recordTypeHandshake, helloBytes)
 	}
-	c.flushHandshake()
 
 	if !c.config.Bugs.SkipChangeCipherSpec && !sendHelloRetryRequest && !c.isDTLS {
 		c.writeRecord(recordTypeChangeCipherSpec, []byte{1})
@@ -1057,9 +1056,13 @@ ResendHelloRetryRequest:
 		c.writeRecord(recordTypeChangeCipherSpec, []byte{1})
 	}
 
+	if config.Bugs.UnencryptedEncryptedExtensions {
+		c.writeRecord(recordTypeHandshake, encryptedExtensions.marshal())
+	}
+
 	// Switch to handshake traffic keys.
 	serverHandshakeTrafficSecret := hs.finishedHash.deriveSecret(serverHandshakeTrafficLabel)
-	c.useOutTrafficSecret(encryptionHandshake, c.wireVersion, hs.suite, serverHandshakeTrafficSecret)
+	c.useOutTrafficSecret(uint16(encryptionHandshake), c.wireVersion, hs.suite, serverHandshakeTrafficSecret)
 	// Derive handshake traffic read key, but don't switch yet.
 	clientHandshakeTrafficSecret := hs.finishedHash.deriveSecret(clientHandshakeTrafficLabel)
 
@@ -1068,7 +1071,7 @@ ResendHelloRetryRequest:
 	if config.Bugs.PartialEncryptedExtensionsWithServerHello {
 		// The first byte has already been sent.
 		c.writeRecord(recordTypeHandshake, encryptedExtensions.marshal()[1:])
-	} else {
+	} else if !config.Bugs.UnencryptedEncryptedExtensions {
 		c.writeRecord(recordTypeHandshake, encryptedExtensions.marshal())
 	}
 
@@ -1216,7 +1219,9 @@ ResendHelloRetryRequest:
 	if c.config.Bugs.SendExtraFinished {
 		c.writeRecord(recordTypeHandshake, finished.marshal())
 	}
-	c.flushHandshake()
+	if err := c.flushHandshake(); err != nil {
+		return err
+	}
 
 	if encryptedExtensions.extensions.hasEarlyData && !c.shouldSkipEarlyData() {
 		for _, expectedMsg := range config.Bugs.ExpectLateEarlyData {
@@ -1239,16 +1244,13 @@ ResendHelloRetryRequest:
 	serverTrafficSecret := hs.finishedHash.deriveSecret(serverApplicationTrafficLabel)
 	c.exporterSecret = hs.finishedHash.deriveSecret(exporterLabel)
 
+	if data := c.config.Bugs.AppDataBeforeTLS13KeyChange; data != nil {
+		c.writeRecord(recordTypeApplicationData, data)
+	}
+
 	// Switch to application data keys on write. In particular, any alerts
 	// from the client certificate are sent over these keys.
-	c.useOutTrafficSecret(encryptionApplication, c.wireVersion, hs.suite, serverTrafficSecret)
-
-	// Send 0.5-RTT messages.
-	for _, halfRTTMsg := range config.Bugs.SendHalfRTTData {
-		if _, err := c.writeRecord(recordTypeApplicationData, halfRTTMsg); err != nil {
-			return err
-		}
-	}
+	c.useOutTrafficSecret(uint16(encryptionApplication), c.wireVersion, hs.suite, serverTrafficSecret)
 
 	// Read end_of_early_data.
 	if encryptedExtensions.extensions.hasEarlyData && c.usesEndOfEarlyData() {
@@ -1266,7 +1268,7 @@ ResendHelloRetryRequest:
 	}
 
 	// Switch input stream to handshake traffic keys.
-	if err := c.useInTrafficSecret(encryptionHandshake, c.wireVersion, hs.suite, clientHandshakeTrafficSecret); err != nil {
+	if err := c.useInTrafficSecret(uint16(encryptionHandshake), c.wireVersion, hs.suite, clientHandshakeTrafficSecret); err != nil {
 		return err
 	}
 
@@ -1416,7 +1418,11 @@ ResendHelloRetryRequest:
 	hs.writeClientHash(clientFinished.marshal())
 
 	// Switch to application data keys on read.
-	if err := c.useInTrafficSecret(encryptionApplication, c.wireVersion, hs.suite, clientTrafficSecret); err != nil {
+	if err := c.useInTrafficSecret(uint16(encryptionApplication), c.wireVersion, hs.suite, clientTrafficSecret); err != nil {
+		return err
+	}
+
+	if err := c.ackHandshake(); err != nil {
 		return err
 	}
 
@@ -1975,13 +1981,12 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 	} else {
 		c.writeRecord(recordTypeHandshake, helloDoneBytes)
 	}
-	c.flushHandshake()
+	if err := c.flushHandshake(); err != nil {
+		return err
+	}
 
 	var pub crypto.PublicKey // public key for client auth, if any
 
-	if err := c.simulatePacketLoss(nil); err != nil {
-		return err
-	}
 	msg, err := c.readHandshake()
 	if err != nil {
 		return err
@@ -2268,7 +2273,9 @@ func (hs *serverHandshakeState) sendFinished(out []byte, isResume bool) error {
 
 	if isResume || (!c.config.Bugs.PackHelloRequestWithFinished && !c.config.Bugs.PackAppDataWithHandshake) {
 		// Defer flushing until Renegotiate() or Write().
-		c.flushHandshake()
+		if err := c.flushHandshake(); err != nil {
+			return err
+		}
 	}
 
 	c.cipherSuite = hs.suite

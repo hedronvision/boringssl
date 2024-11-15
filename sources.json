@@ -757,6 +757,7 @@
     "src/crypto/poly1305/poly1305_tests.txt", 
     "src/crypto/siphash/siphash_tests.txt", 
     "src/crypto/slhdsa/slhdsa_keygen.txt", 
+    "src/crypto/slhdsa/slhdsa_prehash.txt", 
     "src/crypto/slhdsa/slhdsa_siggen.txt", 
     "src/crypto/slhdsa/slhdsa_sigver.txt", 
     "src/crypto/spx/spx_tests.txt", 

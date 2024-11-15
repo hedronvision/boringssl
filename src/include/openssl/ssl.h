@@ -329,11 +329,19 @@ OPENSSL_EXPORT int SSL_set_wfd(SSL *ssl, int fd);
 // returns <= 0. The caller should pass the value into |SSL_get_error| to
 // determine how to proceed.
 //
-// In DTLS, the caller must drive retransmissions. Whenever |SSL_get_error|
-// signals |SSL_ERROR_WANT_READ|, use |DTLSv1_get_timeout| to determine the
-// current timeout. If it expires before the next retry, call
-// |DTLSv1_handle_timeout|. Note that DTLS handshake retransmissions use fresh
-// sequence numbers, so it is not sufficient to replay packets at the transport.
+// In DTLS, the caller must drive retransmissions and timeouts. After calling
+// this function, the caller must use |DTLSv1_get_timeout| to determine the
+// current timeout, if any. If it expires before the application next calls into
+// |ssl|, call |DTLSv1_handle_timeout|. Note that DTLS handshake retransmissions
+// use fresh sequence numbers, so it is not sufficient to replay packets at the
+// transport.
+//
+// After the DTLS handshake, some retransmissions may remain. If |ssl| wrote
+// last in the handshake, it may need to retransmit the final flight in case of
+// packet loss. Additionally, in DTLS 1.3, it may need to retransmit
+// post-handshake messages. To handle these, the caller must always be prepared
+// to receive packets and process them with |SSL_read|, even when the
+// application protocol would otherwise not read from the connection.
 //
 // TODO(davidben): Ensure 0 is only returned on transport EOF.
 // https://crbug.com/466303.
@@ -351,6 +359,12 @@ OPENSSL_EXPORT int SSL_accept(SSL *ssl);
 // any pending handshakes, including renegotiations when enabled. On success, it
 // returns the number of bytes read. Otherwise, it returns <= 0. The caller
 // should pass the value into |SSL_get_error| to determine how to proceed.
+//
+// In DTLS 1.3, the caller must also drive timeouts from retransmitting the
+// final flight of the handshake, as well as post-handshake messages. After
+// calling this function, the caller must use |DTLSv1_get_timeout| to determine
+// the current timeout, if any. If it expires before the application next calls
+// into |ssl|, call |DTLSv1_handle_timeout|.
 //
 // TODO(davidben): Ensure 0 is only returned on transport EOF.
 // https://crbug.com/466303.
@@ -484,10 +498,6 @@ OPENSSL_EXPORT int SSL_get_error(const SSL *ssl, int ret_code);
 // SSL_ERROR_WANT_READ indicates the operation failed attempting to read from
 // the transport. The caller may retry the operation when the transport is ready
 // for reading.
-//
-// If signaled by a DTLS handshake, the caller must also call
-// |DTLSv1_get_timeout| and |DTLSv1_handle_timeout| as appropriate. See
-// |SSL_do_handshake|.
 #define SSL_ERROR_WANT_READ 2
 
 // SSL_ERROR_WANT_WRITE indicates the operation failed attempting to write to
@@ -600,28 +610,26 @@ OPENSSL_EXPORT int SSL_set_mtu(SSL *ssl, unsigned mtu);
 // DTLSv1_set_initial_timeout_duration sets the initial duration for a DTLS
 // handshake timeout.
 //
-// This duration overrides the default of 1 second, which is the strong
-// recommendation of RFC 6347 (see section 4.2.4.1). However, there may exist
-// situations where a shorter timeout would be beneficial, such as for
-// time-sensitive applications.
+// This duration overrides the default of 400 milliseconds, which is
+// recommendation of RFC 9147 for real-time protocols.
 OPENSSL_EXPORT void DTLSv1_set_initial_timeout_duration(SSL *ssl,
                                                         unsigned duration_ms);
 
-// DTLSv1_get_timeout queries the next DTLS handshake timeout. If there is a
-// timeout in progress, it sets |*out| to the time remaining and returns one.
-// Otherwise, it returns zero.
+// DTLSv1_get_timeout queries the running DTLS timers. If there are any in
+// progress, it sets |*out| to the time remaining until the first timer expires
+// and returns one. Otherwise, it returns zero.
 //
 // When the timeout expires, call |DTLSv1_handle_timeout| to handle the
 // retransmit behavior.
 //
-// NOTE: This function must be queried again whenever the handshake state
-// machine changes, including when |DTLSv1_handle_timeout| is called.
+// NOTE: This function must be queried again whenever the state machine changes,
+// including when |DTLSv1_handle_timeout| is called.
 OPENSSL_EXPORT int DTLSv1_get_timeout(const SSL *ssl, struct timeval *out);
 
-// DTLSv1_handle_timeout is called when a DTLS handshake timeout expires. If no
-// timeout had expired, it returns 0. Otherwise, it retransmits the previous
-// flight of handshake messages and returns 1. If too many timeouts had expired
-// without progress or an error occurs, it returns -1.
+// DTLSv1_handle_timeout is called when a DTLS timeout expires. If no timeout
+// had expired, it returns 0. Otherwise, it retransmits the previous flight of
+// handshake messages, or post-handshake messages, and returns 1. If too many
+// timeouts had expired without progress or an error occurs, it returns -1.
 //
 // The caller's external timer should be compatible with the one |ssl| queries
 // within some fudge factor. Otherwise, the call will be a no-op, but
@@ -2454,14 +2462,15 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_keys(SSL_CTX *ctx, const void *in,
 // When encrypting a new ticket, |encrypt| will be one. It writes a public
 // 16-byte key name to |key_name| and a fresh IV to |iv|. The output IV length
 // must match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
-// |callback| returns 1 on success and -1 on error.
+// |callback| returns 1 on success, 0 to decline sending a ticket, and -1 on
+// error.
 //
 // When decrypting a ticket, |encrypt| will be zero. |key_name| will point to a
 // 16-byte key name and |iv| points to an IV. The length of the IV consumed must
 // match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
-// |callback| returns -1 to abort the handshake, 0 if decrypting the ticket
-// failed, and 1 or 2 on success. If it returns 2, the ticket will be renewed.
-// This may be used to re-key the ticket.
+// |callback| returns -1 to abort the handshake, 0 if the ticket key was
+// unrecognized, and 1 or 2 on success. If it returns 2, the ticket will be
+// renewed. This may be used to re-key the ticket.
 //
 // WARNING: |callback| wildly breaks the usual return value convention and is
 // called in two different modes.
@@ -2498,7 +2507,8 @@ struct ssl_ticket_aead_method_st {
   // seal encrypts and authenticates |in_len| bytes from |in|, writes, at most,
   // |max_out_len| bytes to |out|, and puts the number of bytes written in
   // |*out_len|. The |in| and |out| buffers may be equal but will not otherwise
-  // alias. It returns one on success or zero on error.
+  // alias. It returns one on success or zero on error. If the function returns
+  // but |*out_len| is zero, BoringSSL will skip sending a ticket.
   int (*seal)(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out_len,
               const uint8_t *in, size_t in_len);
 
@@ -4420,18 +4430,18 @@ OPENSSL_EXPORT int SSL_set_handshake_hints(SSL *ssl, const uint8_t *hints,
 
 // SSL_CTX_set_msg_callback installs |cb| as the message callback for |ctx|.
 // This callback will be called when sending or receiving low-level record
-// headers, complete handshake messages, ChangeCipherSpec, and alerts.
-// |write_p| is one for outgoing messages and zero for incoming messages.
+// headers, complete handshake messages, ChangeCipherSpec, alerts, and DTLS
+// ACKs. |write_p| is one for outgoing messages and zero for incoming messages.
 //
 // For each record header, |cb| is called with |version| = 0 and |content_type|
 // = |SSL3_RT_HEADER|. The |len| bytes from |buf| contain the header. Note that
 // this does not include the record body. If the record is sealed, the length
 // in the header is the length of the ciphertext.
 //
-// For each handshake message, ChangeCipherSpec, and alert, |version| is the
-// protocol version and |content_type| is the corresponding record type. The
-// |len| bytes from |buf| contain the handshake message, one-byte
-// ChangeCipherSpec body, and two-byte alert, respectively.
+// For each handshake message, ChangeCipherSpec, alert, and DTLS ACK, |version|
+// is the protocol version and |content_type| is the corresponding record type.
+// The |len| bytes from |buf| contain the handshake message, one-byte
+// ChangeCipherSpec body, two-byte alert, and ACK respectively.
 //
 // In connections that enable ECH, |cb| is additionally called with
 // |content_type| = |SSL3_RT_CLIENT_HELLO_INNER| for each ClientHelloInner that

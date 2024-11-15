@@ -40,6 +40,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,11 +104,16 @@ type ShimConfiguration struct {
 	// This is currently used to control tests that enable all curves but may
 	// automatically disable tests in the future.
 	AllCurves []int
+
+	// MaxACKBuffer is the maximum number of received records the shim is
+	// expected to retain when ACKing.
+	MaxACKBuffer int
 }
 
 // Setup shimConfig defaults aligning with BoringSSL.
 var shimConfig ShimConfiguration = ShimConfiguration{
 	HalfRTTTickets: 2,
+	MaxACKBuffer:   32,
 }
 
 //go:embed rsa_2048_key.pem
@@ -721,6 +727,14 @@ func (t *timeoutConn) Write(b []byte) (int, error) {
 	return t.Conn.Write(b)
 }
 
+func expectedReply(b []byte) []byte {
+	ret := make([]byte, len(b))
+	for i, v := range b {
+		ret[i] = v ^ 0xff
+	}
+	return ret
+}
+
 func doExchange(test *testCase, config *Config, conn net.Conn, isResume bool, transcripts *[][]byte, num int) error {
 	if !test.noSessionCache {
 		if config.ClientSessionCache == nil {
@@ -1172,10 +1186,8 @@ func doExchange(test *testCase, config *Config, conn net.Conn, isResume bool, tr
 			}
 		}
 
-		for i, v := range buf {
-			if v != testMessage[i]^0xff {
-				return fmt.Errorf("bad reply contents at byte %d; got %q and wanted %q", i, buf, testMessage)
-			}
+		if expected := expectedReply(testMessage); !bytes.Equal(buf, expected) {
+			return fmt.Errorf("bad reply contents; got %x and wanted %x", buf, expected)
 		}
 
 		if seen := tlsConn.keyUpdateSeen; seen != test.expectUnsolicitedKeyUpdate {
@@ -1559,10 +1571,15 @@ func runTest(dispatcher *shimDispatcher, statusChan chan statusMsg, test *testCa
 				resumeConfig.MaxEarlyDataSize = 16384
 			}
 
-			// Configure the shim to send some data in early data.
-			flags = append(flags, "-on-resume-shim-writes-first")
-			if resumeConfig.Bugs.ExpectEarlyData == nil {
-				resumeConfig.Bugs.ExpectEarlyData = [][]byte{[]byte(shimInitialWrite)}
+			// In DTLS 1.3, we're setting flags to configure the client to attempt
+			// sending early data, but we expect it to realize that it's incapable
+			// of supporting early data and not send any.
+			if test.protocol != dtls {
+				// Configure the shim to send some data in early data.
+				flags = append(flags, "-on-resume-shim-writes-first")
+				if resumeConfig.Bugs.ExpectEarlyData == nil {
+					resumeConfig.Bugs.ExpectEarlyData = [][]byte{[]byte(shimInitialWrite)}
+				}
 			}
 		} else {
 			// By default, send some early data and expect half-RTT data response.
@@ -2372,8 +2389,10 @@ read alert 1 0
 		{
 			protocol: dtls,
 			testType: serverTest,
-			name:     "MTU",
+			name:     "MTU-DTLS12-AEAD",
 			config: Config{
+				MaxVersion:   VersionTLS12,
+				CipherSuites: []uint16{TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
 				Bugs: ProtocolBugs{
 					MaxPacketLength: 256,
 				},
@@ -2383,15 +2402,40 @@ read alert 1 0
 		{
 			protocol: dtls,
 			testType: serverTest,
-			name:     "MTUExceeded",
+			name:     "MTU-DTLS12-AES-CBC",
 			config: Config{
+				MaxVersion:   VersionTLS12,
+				CipherSuites: []uint16{TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256},
 				Bugs: ProtocolBugs{
-					MaxPacketLength: 255,
+					MaxPacketLength: 256,
 				},
 			},
-			flags:              []string{"-mtu", "256"},
-			shouldFail:         true,
-			expectedLocalError: "dtls: exceeded maximum packet length",
+			flags: []string{"-mtu", "256"},
+		},
+		{
+			protocol: dtls,
+			testType: serverTest,
+			name:     "MTU-DTLS12-3DES-CBC",
+			config: Config{
+				MaxVersion:   VersionTLS12,
+				CipherSuites: []uint16{TLS_RSA_WITH_3DES_EDE_CBC_SHA},
+				Bugs: ProtocolBugs{
+					MaxPacketLength: 256,
+				},
+			},
+			flags: []string{"-mtu", "256", "-cipher", "TLS_RSA_WITH_3DES_EDE_CBC_SHA"},
+		},
+		{
+			protocol: dtls,
+			testType: serverTest,
+			name:     "MTU-DTLS13",
+			config: Config{
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					MaxPacketLength: 256,
+				},
+			},
+			flags: []string{"-mtu", "256"},
 		},
 		{
 			name: "EmptyCertificateList",
@@ -2475,6 +2519,99 @@ read alert 1 0
 			expectedError: ":UNEXPECTED_RECORD:",
 		},
 		{
+			name: "AppDataBeforeTLS13KeyChange",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					AppDataBeforeTLS13KeyChange: []byte("TEST MESSAGE"),
+				},
+			},
+			// The shim should fail to decrypt this record.
+			shouldFail:         true,
+			expectedError:      ":BAD_DECRYPT:",
+			expectedLocalError: "remote error: bad record MAC",
+		},
+		{
+			name: "AppDataBeforeTLS13KeyChange-Empty",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					AppDataBeforeTLS13KeyChange: []byte{},
+				},
+			},
+			// The shim should fail to decrypt this record.
+			shouldFail:         true,
+			expectedError:      ":BAD_DECRYPT:",
+			expectedLocalError: "remote error: bad record MAC",
+		},
+		{
+			protocol: dtls,
+			name:     "AppDataBeforeTLS13KeyChange-DTLS",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					AppDataBeforeTLS13KeyChange: []byte("TEST MESSAGE"),
+				},
+			},
+			// The shim will decrypt the record, because it has not
+			// yet applied the key change, but it should know to
+			// reject the record.
+			shouldFail:         true,
+			expectedError:      ":UNEXPECTED_RECORD:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			protocol: dtls,
+			name:     "AppDataBeforeTLS13KeyChange-DTLS-Empty",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					AppDataBeforeTLS13KeyChange: []byte{},
+				},
+			},
+			// The shim will decrypt the record, because it has not
+			// yet applied the key change, but it should know to
+			// reject the record.
+			shouldFail:         true,
+			expectedError:      ":UNEXPECTED_RECORD:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			name: "UnencryptedEncryptedExtensions",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					UnencryptedEncryptedExtensions: true,
+				},
+			},
+			// The shim should fail to decrypt this record.
+			shouldFail:         true,
+			expectedError:      ":DECRYPTION_FAILED_OR_BAD_RECORD_MAC:",
+			expectedLocalError: "remote error: bad record MAC",
+		},
+		{
+			protocol: dtls,
+			name:     "UnencryptedEncryptedExtensions-DTLS",
+			config: Config{
+				MinVersion: VersionTLS13,
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					UnencryptedEncryptedExtensions: true,
+				},
+			},
+			// The shim will decrypt the record, because it has not
+			// yet applied the key change, but it should know to
+			// reject new handshake data on the previous epoch.
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
 			name: "AppDataAfterChangeCipherSpec",
 			config: Config{
 				MaxVersion: VersionTLS12,
@@ -2542,41 +2679,6 @@ read alert 1 0
 			},
 			shouldFail:    true,
 			expectedError: ":TLSV1_ALERT_RECORD_OVERFLOW:",
-		},
-		{
-			protocol: dtls,
-			name:     "ReorderHandshakeFragments-Small-DTLS",
-			config: Config{
-				Bugs: ProtocolBugs{
-					ReorderHandshakeFragments: true,
-					// Small enough that every handshake message is
-					// fragmented.
-					MaxHandshakeRecordLength: 2,
-				},
-			},
-		},
-		{
-			protocol: dtls,
-			name:     "ReorderHandshakeFragments-Large-DTLS",
-			config: Config{
-				Bugs: ProtocolBugs{
-					ReorderHandshakeFragments: true,
-					// Large enough that no handshake message is
-					// fragmented.
-					MaxHandshakeRecordLength: 2048,
-				},
-			},
-		},
-		{
-			protocol: dtls,
-			name:     "MixCompleteMessageWithFragments-DTLS",
-			config: Config{
-				Bugs: ProtocolBugs{
-					ReorderHandshakeFragments:       true,
-					MixCompleteMessageWithFragments: true,
-					MaxHandshakeRecordLength:        2,
-				},
-			},
 		},
 		{
 			name: "SendInvalidRecordType",
@@ -3231,23 +3333,22 @@ read alert 1 0
 			},
 			resumeSession: true,
 		},
-		// TODO(crbug.com/42290594): This test and the next shouldn't be
-		// restricted to a max version of TLS 1.2, but they're broken in DTLS 1.3.
 		{
 			protocol: dtls,
-			name:     "DTLS-SendExtraFinished",
+			name:     "DTLS12-SendExtraFinished",
 			config: Config{
 				MaxVersion: VersionTLS12,
 				Bugs: ProtocolBugs{
 					SendExtraFinished: true,
 				},
 			},
-			shouldFail:    true,
-			expectedError: ":UNEXPECTED_RECORD:",
+			shouldFail:         true,
+			expectedError:      ":UNEXPECTED_RECORD:",
+			expectedLocalError: "remote error: unexpected message",
 		},
 		{
 			protocol: dtls,
-			name:     "DTLS-SendExtraFinished-Reordered",
+			name:     "DTLS12-SendExtraFinished-Reordered",
 			config: Config{
 				MaxVersion: VersionTLS12,
 				Bugs: ProtocolBugs{
@@ -3256,8 +3357,65 @@ read alert 1 0
 					SendExtraFinished:         true,
 				},
 			},
-			shouldFail:    true,
-			expectedError: ":UNEXPECTED_RECORD:",
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			protocol: dtls,
+			name:     "DTLS12-SendExtraFinished-Packed",
+			config: Config{
+				MaxVersion: VersionTLS12,
+				Bugs: ProtocolBugs{
+					SendExtraFinished:      true,
+					PackHandshakeFragments: 1000,
+				},
+			},
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			protocol: dtls,
+			name:     "DTLS13-SendExtraFinished",
+			config: Config{
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					SendExtraFinished: true,
+				},
+			},
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			protocol: dtls,
+			name:     "DTLS13-SendExtraFinished-Reordered",
+			config: Config{
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					MaxHandshakeRecordLength:  2,
+					ReorderHandshakeFragments: true,
+					SendExtraFinished:         true,
+				},
+			},
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
+		},
+		{
+			protocol: dtls,
+			name:     "DTLS13-SendExtraFinished-Packed",
+			config: Config{
+				MaxVersion: VersionTLS13,
+				Bugs: ProtocolBugs{
+					SendExtraFinished:      true,
+					PackHandshakeFragments: 1000,
+				},
+			},
+			shouldFail:         true,
+			expectedError:      ":EXCESS_HANDSHAKE_DATA:",
+			expectedLocalError: "remote error: unexpected message",
 		},
 		{
 			testType: serverTest,
@@ -3818,6 +3976,57 @@ read alert 1 0
 			},
 		},
 		expectMessageDropped: true,
+	})
+
+	testCases = append(testCases, testCase{
+		protocol: dtls,
+		name:     "DTLS13-MessageCallback-Client",
+		config: Config{
+			MaxVersion: VersionTLS13,
+			MinVersion: VersionTLS13,
+		},
+		flags: []string{
+			"-expect-msg-callback",
+			`write hs 1
+read hs 2
+read hs 8
+read hs 11
+read hs 15
+read hs 20
+write hs 20
+read ack
+read hs 4
+read hs 4
+read alert 1 0
+`,
+		},
+	})
+
+	testCases = append(testCases, testCase{
+		testType: serverTest,
+		protocol: dtls,
+		name:     "DTLS13-MessageCallback-Server",
+		config: Config{
+			MaxVersion: VersionTLS13,
+			MinVersion: VersionTLS13,
+		},
+		flags: []string{
+			"-expect-msg-callback",
+			`read hs 1
+write hs 2
+write hs 8
+write hs 11
+write hs 15
+write hs 20
+read hs 20
+write ack
+write hs 4
+write hs 4
+read ack
+read ack
+read alert 1 0
+`,
+		},
 	})
 }
 
@@ -5054,39 +5263,6 @@ func addStateMachineCoverageTests(config stateMachineTestConfig) {
 		flags:         []string{"-expect-hrr"},
 	})
 
-	// TODO(crbug.com/42290594): The -NoResume tests here are copies
-	// of the above tests, but without resumeSession set. These exist to
-	// test HRR in DTLS 1.3, because tests DTLS 1.3 tests with resumption
-	// enabled are skipped due to lack of support for resumption. Once we
-	// support resumption in DTLS 1.3, these can be deleted.
-	if config.protocol == dtls {
-		tests = append(tests, testCase{
-			name: "TLS13-HelloRetryRequest-Client-NoResume",
-			config: Config{
-				MaxVersion: VersionTLS13,
-				MinVersion: VersionTLS13,
-				// P-384 requires a HelloRetryRequest against BoringSSL's default
-				// configuration. Assert this with ExpectMissingKeyShare.
-				CurvePreferences: []CurveID{CurveP384},
-				Bugs: ProtocolBugs{
-					ExpectMissingKeyShare: true,
-				},
-			},
-			flags: []string{"-expect-hrr"},
-		})
-		tests = append(tests, testCase{
-			testType: serverTest,
-			name:     "TLS13-HelloRetryRequest-Server-NoResume",
-			config: Config{
-				MaxVersion: VersionTLS13,
-				MinVersion: VersionTLS13,
-				// Require a HelloRetryRequest for every curve.
-				DefaultCurves: []CurveID{},
-			},
-			flags: []string{"-expect-hrr"},
-		})
-	}
-
 	// TLS 1.3 early data tests. DTLS 1.3 doesn't support early data yet.
 	// These tests are disabled for QUIC as well because they test features
 	// that do not apply to QUIC's use of TLS 1.3.
@@ -5173,6 +5349,21 @@ func addStateMachineCoverageTests(config stateMachineTestConfig) {
 			earlyData:     true,
 			shouldFail:    true,
 			expectedError: ":TOO_MUCH_READ_EARLY_DATA:",
+		})
+	}
+
+	// Test that early data is disabled for DTLS 1.3.
+	if config.protocol == dtls {
+		tests = append(tests, testCase{
+			testType: clientTest,
+			protocol: dtls,
+			name:     "DTLS13-EarlyData",
+			config: Config{
+				MaxVersion: VersionTLS13,
+				MinVersion: VersionTLS13,
+			},
+			resumeSession: true,
+			earlyData:     true,
 		})
 	}
 
@@ -8439,54 +8630,77 @@ func addExtensionTests() {
 				resumeSession:        true,
 				expectResumeRejected: true,
 			})
-			// Test the ticket callback, with and without renewal.
-			testCases = append(testCases, testCase{
-				protocol: protocol,
-				testType: serverTest,
-				name:     "TicketCallback-" + suffix,
-				config: Config{
-					MaxVersion: ver.version,
-				},
-				resumeSession: true,
-				flags:         []string{"-use-ticket-callback"},
-			})
-			testCases = append(testCases, testCase{
-				protocol: protocol,
-				testType: serverTest,
-				name:     "TicketCallback-Renew-" + suffix,
-				config: Config{
-					MaxVersion: ver.version,
-					Bugs: ProtocolBugs{
-						ExpectNewTicket: true,
+			// Test the ticket callbacks.
+			for _, aeadCallback := range []bool{false, true} {
+				flag := "-use-ticket-callback"
+				callbackSuffix := suffix
+				if aeadCallback {
+					flag = "-use-ticket-aead-callback"
+					callbackSuffix += "-AEAD"
+				}
+				testCases = append(testCases, testCase{
+					protocol: protocol,
+					testType: serverTest,
+					name:     "TicketCallback-" + callbackSuffix,
+					config: Config{
+						MaxVersion: ver.version,
 					},
-				},
-				flags:         []string{"-use-ticket-callback", "-renew-ticket"},
-				resumeSession: true,
-			})
-
-			// Test that the ticket callback is only called once when everything before
-			// it in the ClientHello is asynchronous. This corrupts the ticket so
-			// certificate selection callbacks run.
-			testCases = append(testCases, testCase{
-				protocol: protocol,
-				testType: serverTest,
-				name:     "TicketCallback-SingleCall-" + suffix,
-				config: Config{
-					MaxVersion: ver.version,
-					Bugs: ProtocolBugs{
-						FilterTicket: func(in []byte) ([]byte, error) {
-							in[len(in)-1] ^= 1
-							return in, nil
+					resumeSession: true,
+					flags:         []string{flag},
+				})
+				// Only the old callback supports renewal.
+				if !aeadCallback {
+					testCases = append(testCases, testCase{
+						protocol: protocol,
+						testType: serverTest,
+						name:     "TicketCallback-Renew-" + callbackSuffix,
+						config: Config{
+							MaxVersion: ver.version,
+							Bugs: ProtocolBugs{
+								ExpectNewTicket: true,
+							},
+						},
+						flags:         []string{flag, "-renew-ticket"},
+						resumeSession: true,
+					})
+				}
+				testCases = append(testCases, testCase{
+					protocol: protocol,
+					testType: serverTest,
+					name:     "TicketCallback-Skip-" + callbackSuffix,
+					config: Config{
+						MaxVersion: ver.version,
+						Bugs: ProtocolBugs{
+							ExpectNoNonEmptyNewSessionTicket: true,
 						},
 					},
-				},
-				resumeSession:        true,
-				expectResumeRejected: true,
-				flags: []string{
-					"-use-ticket-callback",
-					"-async",
-				},
-			})
+					flags: []string{flag, "-skip-ticket"},
+				})
+
+				// Test that the ticket callback is only called once when everything before
+				// it in the ClientHello is asynchronous. This corrupts the ticket so
+				// certificate selection callbacks run.
+				testCases = append(testCases, testCase{
+					protocol: protocol,
+					testType: serverTest,
+					name:     "TicketCallback-SingleCall-" + callbackSuffix,
+					config: Config{
+						MaxVersion: ver.version,
+						Bugs: ProtocolBugs{
+							FilterTicket: func(in []byte) ([]byte, error) {
+								in[len(in)-1] ^= 1
+								return in, nil
+							},
+						},
+					},
+					resumeSession:        true,
+					expectResumeRejected: true,
+					flags: []string{
+						flag,
+						"-async",
+					},
+				})
+			}
 
 			// Resume with various lengths of ticket session id.
 			if ver.version < VersionTLS13 {
@@ -9124,6 +9338,13 @@ func addResumptionVersionTests() {
 						},
 					})
 				} else if !isBadDTLSResumption {
+					expectedError := ":OLD_SESSION_VERSION_NOT_RETURNED:"
+					if sessionVers.version < VersionTLS13 && resumeVers.version >= VersionTLS13 {
+						// The server will "resume" the session by sending pre_shared_key,
+						// but the shim will not have sent pre_shared_key at all. The shim
+						// should reject this because the extension was not allowed at all.
+						expectedError = ":UNEXPECTED_EXTENSION:"
+					}
 					testCases = append(testCases, testCase{
 						protocol:      protocol,
 						name:          "Resume-Client-Mismatch" + suffix,
@@ -9144,7 +9365,7 @@ func addResumptionVersionTests() {
 							version: resumeVers.version,
 						},
 						shouldFail:    true,
-						expectedError: ":OLD_SESSION_VERSION_NOT_RETURNED:",
+						expectedError: expectedError,
 					})
 				}
 
@@ -10151,48 +10372,55 @@ func addRenegotiationTests() {
 }
 
 func addDTLSReplayTests() {
-	// Test that sequence number replays are detected.
-	testCases = append(testCases, testCase{
-		protocol:     dtls,
-		name:         "DTLS-Replay",
-		messageCount: 200,
-		replayWrites: true,
-	})
+	for _, vers := range allVersions(dtls) {
+		// Test that sequence number replays are detected.
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "DTLS-Replay-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+			},
+			messageCount: 200,
+			replayWrites: true,
+		})
 
-	// Test the incoming sequence number skipping by values larger
-	// than the retransmit window.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS-Replay-LargeGaps",
-		config: Config{
-			Bugs: ProtocolBugs{
-				SequenceNumberMapping: func(in uint64) uint64 {
-					return in * 1023
+		// Test the incoming sequence number skipping by values larger
+		// than the retransmit window.
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "DTLS-Replay-LargeGaps-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+				Bugs: ProtocolBugs{
+					SequenceNumberMapping: func(in uint64) uint64 {
+						return in * 1023
+					},
 				},
 			},
-		},
-		messageCount: 200,
-		replayWrites: true,
-	})
+			messageCount: 200,
+			replayWrites: true,
+		})
 
-	// Test the incoming sequence number changing non-monotonically.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS-Replay-NonMonotonic",
-		config: Config{
-			Bugs: ProtocolBugs{
-				SequenceNumberMapping: func(in uint64) uint64 {
-					// This mapping has numbers counting backwards in groups
-					// of 256, and then jumping forwards 511 numbers.
-					return in ^ 255
+		// Test the incoming sequence number changing non-monotonically.
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "DTLS-Replay-NonMonotonic-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+				Bugs: ProtocolBugs{
+					SequenceNumberMapping: func(in uint64) uint64 {
+						// This mapping has numbers counting backwards in groups
+						// of 256, and then jumping forwards 511 numbers.
+						return in ^ 255
+					},
 				},
 			},
-		},
-		// This messageCount is large enough to make sure that the SequenceNumberMapping
-		// will reach the point where it jumps forwards after stepping backwards.
-		messageCount: 500,
-		replayWrites: true,
-	})
+			// This messageCount is large enough to make sure that the SequenceNumberMapping
+			// will reach the point where it jumps forwards after stepping backwards.
+			messageCount: 500,
+			replayWrites: true,
+		})
+	}
 }
 
 var testSignatureAlgorithms = []struct {
@@ -11308,17 +11536,17 @@ func addSignatureAlgorithmTests() {
 	})
 }
 
-// timeouts is the retransmit schedule for BoringSSL. It doubles and
+// timeouts is the default retransmit schedule for BoringSSL. It doubles and
 // caps at 60 seconds. On the 13th timeout, it gives up.
 var timeouts = []time.Duration{
-	1 * time.Second,
-	2 * time.Second,
-	4 * time.Second,
-	8 * time.Second,
-	16 * time.Second,
-	32 * time.Second,
-	60 * time.Second,
-	60 * time.Second,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1600 * time.Millisecond,
+	3200 * time.Millisecond,
+	6400 * time.Millisecond,
+	12800 * time.Millisecond,
+	25600 * time.Millisecond,
+	51200 * time.Millisecond,
 	60 * time.Second,
 	60 * time.Second,
 	60 * time.Second,
@@ -11345,143 +11573,753 @@ var shortTimeouts = []time.Duration{
 }
 
 func addDTLSRetransmitTests() {
-	// These tests work by coordinating some behavior on both the shim and
-	// the runner.
-	//
-	// TimeoutSchedule configures the runner to send a series of timeout
-	// opcodes to the shim (see packetAdaptor) immediately before reading
-	// each peer handshake flight N. The timeout opcode both simulates a
-	// timeout in the shim and acts as a synchronization point to help the
-	// runner bracket each handshake flight.
-	//
-	// We assume the shim does not read from the channel eagerly. It must
-	// first wait until it has sent flight N and is ready to receive
-	// handshake flight N+1. At this point, it will process the timeout
-	// opcode. It must then immediately respond with a timeout ACK and act
-	// as if the shim was idle for the specified amount of time.
-	//
-	// The runner then drops all packets received before the ACK and
-	// continues waiting for flight N. This ordering results in one attempt
-	// at sending flight N to be dropped. For the test to complete, the
-	// shim must send flight N again, testing that the shim implements DTLS
-	// retransmit on a timeout.
+	for _, shortTimeout := range []bool{false, true} {
+		for _, vers := range allVersions(dtls) {
+			suffix := "-" + vers.name
+			flags := []string{"-async"} // Retransmit tests require async.
+			useTimeouts := timeouts
+			if shortTimeout {
+				suffix += "-Short"
+				flags = append(flags, "-initial-timeout-duration-ms", "250")
+				useTimeouts = shortTimeouts
+			}
 
-	// TODO(davidben): Add DTLS 1.3 versions of these tests. There will
-	// likely be more epochs to cross and the final message's retransmit may
-	// be more complex.
+			// In all versions, the sender will retransmit the whole flight if
+			// it times out and hears nothing.
+			writeFlightBasic := func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+				if len(received) > 0 {
+					// Exercise every timeout but the last one (which would fail the
+					// connection).
+					for _, t := range useTimeouts[:len(useTimeouts)-1] {
+						c.AdvanceClock(t)
+						c.ReadRetransmit()
+					}
+				}
+				// Finally release the whole flight to the shim.
+				c.WriteFlight(next)
+			}
+			ackFlightBasic := func(c *DTLSController, prev, received []DTLSMessage, records []DTLSRecordNumberInfo) {
+				if vers.version >= VersionTLS13 {
+					// TODO(crbug.com/42290594): Implement retransmitting the
+					// final flight in DTLS 1.3.
+					return
+				}
+				// In DTLS 1.2, the final flight is retransmitted on receipt of
+				// the previous flight. Test the peer is willing to retransmit
+				// it several times.
+				for i := 0; i < 5; i++ {
+					c.WriteFlight(prev)
+					c.ReadRetransmit()
+				}
+			}
+			testCases = append(testCases, testCase{
+				protocol: dtls,
+				name:     "DTLS-Retransmit-Client-Basic" + suffix,
+				config: Config{
+					MaxVersion: vers.version,
+					Bugs: ProtocolBugs{
+						WriteFlightDTLS: writeFlightBasic,
+						ACKFlightDTLS:   ackFlightBasic,
+					},
+				},
+				resumeSession: true,
+				flags:         flags,
+			})
+			testCases = append(testCases, testCase{
+				protocol: dtls,
+				testType: serverTest,
+				name:     "DTLS-Retransmit-Server-Basic" + suffix,
+				config: Config{
+					MaxVersion: vers.version,
+					Bugs: ProtocolBugs{
+						WriteFlightDTLS: writeFlightBasic,
+						ACKFlightDTLS:   ackFlightBasic,
+					},
+				},
+				resumeSession: true,
+				flags:         flags,
+			})
 
-	// Test that this is indeed the timeout schedule. Stress all
-	// four patterns of handshake.
-	for i := 1; i < len(timeouts); i++ {
-		number := strconv.Itoa(i)
-		testCases = append(testCases, testCase{
-			protocol: dtls,
-			name:     "DTLS-Retransmit-Client-" + number,
-			config: Config{
-				MaxVersion: VersionTLS12,
-				Bugs: ProtocolBugs{
-					TimeoutSchedule: timeouts[:i],
+			if vers.version <= VersionTLS12 {
+				// In DTLS 1.2, receiving a part of the next flight should not stop
+				// the retransmission timer.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					name:     "DTLS-Retransmit-PartialProgress" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								// Send a portion of the first message. The rest was lost.
+								msg := next[0]
+								split := len(msg.Data) / 2
+								c.WriteFragments([]DTLSFragment{msg.Fragment(0, split)})
+								// If we time out, the shim should still retransmit. It knows
+								// we received the whole flight, but the shim should use a
+								// retransmit to request the runner try again.
+								c.AdvanceClock(useTimeouts[0])
+								c.ReadRetransmit()
+								// "Retransmit" the rest of the flight. The shim should remember
+								// the portion that was already sent.
+								rest := []DTLSFragment{msg.Fragment(split, len(msg.Data)-split)}
+								for _, m := range next[1:] {
+									rest = append(rest, m.Fragment(0, len(m.Data)))
+								}
+								c.WriteFragments(rest)
+							},
+						},
+					},
+					flags: flags,
+				})
+			} else {
+				// In DTLS 1.3, receiving a part of the next flight implicitly ACKs
+				// the previous flight.
+				testCases = append(testCases, testCase{
+					testType: serverTest,
+					protocol: dtls,
+					name:     "DTLS-Retransmit-PartialProgress-Server" + suffix,
+					config: Config{
+						MaxVersion:    vers.version,
+						DefaultCurves: []CurveID{}, // Force HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								// Send a portion of the first message. The rest was lost.
+								msg := next[0]
+								split := len(msg.Data) / 2
+								c.WriteFragments([]DTLSFragment{msg.Fragment(0, split)})
+								// This is enough to ACK the previous flight. The shim
+								// should stop retransmitting and even stop the timer.
+								//
+								// TODO(crbug.com/42290594): The shim should send a partial
+								// ACK to request that we retransmit.
+								for _, t := range useTimeouts {
+									c.AdvanceClock(t)
+								}
+								// "Retransmit" the rest of the flight. The shim should remember
+								// the portion that was already sent.
+								rest := []DTLSFragment{msg.Fragment(split, len(msg.Data)-split)}
+								for _, m := range next[1:] {
+									rest = append(rest, m.Fragment(0, len(m.Data)))
+								}
+								c.WriteFragments(rest)
+							},
+						},
+					},
+					flags: flags,
+				})
+
+				// When the shim is a client, receiving fragments before the version is
+				// known does not trigger this behavior.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					name:     "DTLS-Retransmit-PartialProgress-Client" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								// Send a portion of the ServerHello. The rest was lost.
+								msg := next[0]
+								split := len(msg.Data) / 2
+								c.WriteFragments([]DTLSFragment{msg.Fragment(0, split)})
+
+								// The shim did not know this was DTLS 1.3, so it still
+								// retransmits ClientHello.
+								c.AdvanceClock(useTimeouts[0])
+								c.ReadRetransmit()
+
+								// Finish the ServerHello. The version is still not known,
+								// at the time the ServerHello fragment is processed, This
+								// is not as efficient as we could be; we could go back and
+								// implicitly ACK once the version is known. But the last
+								// byte of ServerHello will almost certainly be in the same
+								// packet as EncryptedExtensions, which will trigger the case
+								// below.
+								c.WriteFragments([]DTLSFragment{msg.Fragment(split, len(msg.Data)-split)})
+								c.AdvanceClock(useTimeouts[1])
+								c.ReadRetransmit()
+
+								// Send EncryptedExtensions. The shim now knows the version
+								// and implicitly ACKs everything.
+								c.WriteFragments([]DTLSFragment{next[1].Fragment(0, len(next[1].Data))})
+
+								// This is enough to ACK the previous flight. The shim
+								// should stop retransmitting and even stop the timer.
+								//
+								// TODO(crbug.com/42290594): The shim should send a partial
+								// ACK to request that we retransmit.
+								for _, t := range useTimeouts[2:] {
+									c.AdvanceClock(t)
+								}
+
+								// "Retransmit" the rest of the flight. The shim should remember
+								// the portion that was already sent.
+								var rest []DTLSFragment
+								for _, m := range next[2:] {
+									rest = append(rest, m.Fragment(0, len(m.Data)))
+								}
+								c.WriteFragments(rest)
+							},
+						},
+					},
+					flags: flags,
+				})
+			}
+
+			// Test that exceeding the timeout schedule hits a read
+			// timeout.
+			testCases = append(testCases, testCase{
+				protocol: dtls,
+				name:     "DTLS-Retransmit-Timeout" + suffix,
+				config: Config{
+					MaxVersion: vers.version,
+					Bugs: ProtocolBugs{
+						WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+							for _, t := range useTimeouts[:len(useTimeouts)-1] {
+								c.AdvanceClock(t)
+								c.ReadRetransmit()
+							}
+							c.AdvanceClock(useTimeouts[len(useTimeouts)-1])
+							// The shim should give up at this point.
+						},
+					},
 				},
-			},
-			resumeSession: true,
-			flags:         []string{"-async"},
-		})
-		testCases = append(testCases, testCase{
-			protocol: dtls,
-			testType: serverTest,
-			name:     "DTLS-Retransmit-Server-" + number,
-			config: Config{
-				MaxVersion: VersionTLS12,
-				Bugs: ProtocolBugs{
-					TimeoutSchedule: timeouts[:i],
+				resumeSession: true,
+				flags:         flags,
+				shouldFail:    true,
+				expectedError: ":READ_TIMEOUT_EXPIRED:",
+			})
+
+			// Test that timeout handling has a fudge factor, due to API
+			// problems.
+			testCases = append(testCases, testCase{
+				protocol: dtls,
+				name:     "DTLS-Retransmit-Fudge" + suffix,
+				config: Config{
+					MaxVersion: vers.version,
+					Bugs: ProtocolBugs{
+						WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+							c.AdvanceClock(useTimeouts[0] - 10*time.Millisecond)
+							c.ReadRetransmit()
+							c.WriteFlight(next)
+						},
+					},
 				},
-			},
-			resumeSession: true,
-			flags:         []string{"-async"},
-		})
+				resumeSession: true,
+				flags:         flags,
+			})
+
+			// Test that the shim can retransmit at different MTUs.
+			testCases = append(testCases, testCase{
+				protocol: dtls,
+				name:     "DTLS-Retransmit-ChangeMTU" + suffix,
+				config: Config{
+					MaxVersion: vers.version,
+					// Request a client certificate, so the shim has more to send.
+					ClientAuth: RequireAnyClientCert,
+					Bugs: ProtocolBugs{
+						WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+							for i, mtu := range []int{300, 301, 302, 303, 299, 298, 297} {
+								c.SetMTU(mtu)
+								c.AdvanceClock(useTimeouts[i])
+								c.ReadRetransmit()
+							}
+							c.WriteFlight(next)
+						},
+					},
+				},
+				shimCertificate: &rsaChainCertificate,
+				flags:           flags,
+			})
+
+			// DTLS 1.3 uses explicit ACKs.
+			if vers.version >= VersionTLS13 {
+				// The two server flights (HelloRetryRequest and ServerHello..Finished)
+				// happen after the shim has learned the version, so they are more
+				// straightforward. In these tests, we trigger HelloRetryRequest,
+				// and also use ML-KEM with rsaChainCertificate and a limited MTU,
+				// to increase the number of records and exercise more complex
+				// ACK patterns.
+
+				// After ACKing everything, the shim should stop retransmitting.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKEverything" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						Credential:       &rsaChainCertificate,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						DefaultCurves:    []CurveID{}, // Force HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							// Send smaller packets to exercise more ACK cases.
+							MaxPacketLength:          512,
+							MaxHandshakeRecordLength: 512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									c.WriteACK(c.OutEpoch(), records)
+									// After ACKing everything, the shim should stop the timer
+									// and wait for the next flight.
+									for _, t := range useTimeouts {
+										c.AdvanceClock(t)
+									}
+								}
+								c.WriteFlight(next)
+							},
+							SequenceNumberMapping: func(in uint64) uint64 {
+								// Perturb sequence numbers to test that ACKs are sorted.
+								return in ^ 63
+							},
+						},
+					},
+					shimCertificate: &rsaChainCertificate,
+					flags: slices.Concat(flags, []string{
+						"-mtu", "512",
+						"-curves", strconv.Itoa(int(CurveX25519MLKEM768)),
+						// Request a client certificate so the client final flight is
+						// larger.
+						"-require-any-client-certificate",
+					}),
+				})
+
+				// ACK packets one by one, in reverse.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKReverse" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						DefaultCurves:    []CurveID{}, // Force HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							MaxPacketLength: 512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									for _, t := range useTimeouts[:len(useTimeouts)-1] {
+										if len(records) > 0 {
+											c.WriteACK(c.OutEpoch(), []DTLSRecordNumberInfo{records[len(records)-1]})
+										}
+										c.AdvanceClock(t)
+										records = c.ReadRetransmit()
+									}
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					shimCertificate: &rsaChainCertificate,
+					flags:           slices.Concat(flags, []string{"-mtu", "512", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// ACK packets one by one, forwards.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKForwards" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						DefaultCurves:    []CurveID{}, // Force HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							MaxPacketLength: 512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									for _, t := range useTimeouts[:len(useTimeouts)-1] {
+										if len(records) > 0 {
+											c.WriteACK(c.OutEpoch(), []DTLSRecordNumberInfo{records[0]})
+										}
+										c.AdvanceClock(t)
+										records = c.ReadRetransmit()
+									}
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					shimCertificate: &rsaChainCertificate,
+					flags:           slices.Concat(flags, []string{"-mtu", "512", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// ACK 1/3 the packets each time.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKIterate" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						DefaultCurves:    []CurveID{}, // Force HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							MaxPacketLength: 512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									for i, t := range useTimeouts[:len(useTimeouts)-1] {
+										if len(records) > 0 {
+											ack := make([]DTLSRecordNumberInfo, 0, (len(records)+2)/3)
+											for i := 0; i < len(records); i += 3 {
+												ack = append(ack, records[i])
+											}
+											c.WriteACK(c.OutEpoch(), ack)
+										}
+										// Change the MTU every iteration, to make the fragment
+										// patterns more complex.
+										c.SetMTU(512 + i)
+										c.AdvanceClock(t)
+										records = c.ReadRetransmit()
+									}
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					shimCertificate: &rsaChainCertificate,
+					flags:           slices.Concat(flags, []string{"-mtu", "512", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// ACKing packets that have already been ACKed is a no-op.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKDuplicate" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							SendHelloRetryRequestCookie: []byte("cookie"),
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									// Keep ACKing the same record over and over.
+									c.WriteACK(c.OutEpoch(), records[:1])
+									c.AdvanceClock(useTimeouts[0])
+									c.ReadRetransmit()
+									c.WriteACK(c.OutEpoch(), records[:1])
+									c.AdvanceClock(useTimeouts[1])
+									c.ReadRetransmit()
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					flags: flags,
+				})
+
+				// When ACKing ServerHello..Finished, the ServerHello might be
+				// ACKed at epoch 0 or epoch 2, depending on how far the client
+				// received. Test tha epoch 0 is allowed by ACKing each packet
+				// at the record it was received.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKMatchingEpoch" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									for _, t := range useTimeouts[:len(useTimeouts)-1] {
+										if len(records) > 0 {
+											c.WriteACK(uint16(records[0].Epoch), []DTLSRecordNumberInfo{records[0]})
+										}
+										c.AdvanceClock(t)
+										records = c.ReadRetransmit()
+									}
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					flags: flags,
+				})
+
+				// However, records may not be ACKed at lower epoch than they
+				// were received.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKBadEpoch" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) == 0 {
+									// Send the ClientHello.
+									c.WriteFlight(next)
+								} else {
+									// Try to ACK ServerHello..Finished at epoch 0. The shim should reject this.
+									c.WriteACK(0, records)
+								}
+							},
+						},
+					},
+					flags:         flags,
+					shouldFail:    true,
+					expectedError: ":DECODE_ERROR:",
+				})
+
+				// The bad epoch check should notice when the epoch number
+				// would overflow 2^16.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKEpochOverflow" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) == 0 {
+									// Send the ClientHello.
+									c.WriteFlight(next)
+								} else {
+									r := records[0]
+									r.Epoch += 1 << 63
+									c.WriteACK(0, []DTLSRecordNumberInfo{r})
+								}
+							},
+						},
+					},
+					flags:         flags,
+					shouldFail:    true,
+					expectedError: ":DECODE_ERROR:",
+				})
+
+				// ACK some records from the first transmission, trigger a
+				// retransmit, but then ACK the rest of the first transmission.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKOldRecords" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						Bugs: ProtocolBugs{
+							MaxPacketLength: 512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									c.WriteACK(c.OutEpoch(), records[len(records)/2:])
+									c.AdvanceClock(useTimeouts[0])
+									c.ReadRetransmit()
+									c.WriteACK(c.OutEpoch(), records[:len(records)/2])
+									// Everything should be ACKed now. The shim should not
+									// retransmit anything.
+									c.AdvanceClock(useTimeouts[1])
+									c.AdvanceClock(useTimeouts[2])
+									c.AdvanceClock(useTimeouts[3])
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					flags: slices.Concat(flags, []string{"-mtu", "512", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// If the shim sends too many records, it will eventually forget them.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKForgottenRecords" + suffix,
+					config: Config{
+						MaxVersion:       vers.version,
+						CurvePreferences: []CurveID{CurveX25519MLKEM768},
+						Bugs: ProtocolBugs{
+							MaxPacketLength: 256,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) > 0 {
+									// Make the peer retransmit many times, with a small MTU.
+									for _, t := range useTimeouts[:len(useTimeouts)-2] {
+										c.AdvanceClock(t)
+										c.ReadRetransmit()
+									}
+									// ACK the first record the shim ever sent. It will have
+									// fallen off the queue by now, so it is expected to not
+									// impact the shim's retransmissions.
+									c.WriteACK(c.OutEpoch(), []DTLSRecordNumberInfo{{DTLSRecordNumber: records[0].DTLSRecordNumber}})
+									c.AdvanceClock(useTimeouts[len(useTimeouts)-2])
+									c.ReadRetransmit()
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					flags: slices.Concat(flags, []string{"-mtu", "256", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// The shim should ignore ACKs for a previous flight, and not get its
+				// internal state confused.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-ACKPreviousFlight" + suffix,
+					config: Config{
+						MaxVersion:    vers.version,
+						DefaultCurves: []CurveID{}, // Force a HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if next[len(next)-1].Type == typeFinished {
+									// We are now sending client Finished, in response
+									// to the shim's ServerHello. ACK the shim's first
+									// record, which would have been part of
+									// HelloRetryRequest. This should not impact retransmit.
+									c.WriteACK(c.OutEpoch(), []DTLSRecordNumberInfo{{DTLSRecordNumber: DTLSRecordNumber{Epoch: 0, Sequence: 0}}})
+									c.AdvanceClock(useTimeouts[0])
+									c.ReadRetransmit()
+								}
+								c.WriteFlight(next)
+							},
+						},
+					},
+					flags: flags,
+				})
+
+				// Records that contain a mix of discarded and processed fragments should
+				// not be ACKed.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					testType: serverTest,
+					name:     "DTLS-Retransmit-Server-DoNotACKDiscardedFragments" + suffix,
+					config: Config{
+						MaxVersion:    vers.version,
+						DefaultCurves: []CurveID{}, // Force a HelloRetryRequest.
+						Bugs: ProtocolBugs{
+							PackHandshakeFragments: 4096,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								// Send the flight, but combine every fragment with a far future
+								// fragment, which the shim will discard. During the handshake,
+								// the shim has enough information to reject this entirely, but
+								// that would require coordinating with the handshake state
+								// machine. Instead, BoringSSL discards the fragment and skips
+								// ACKing the packet.
+								//
+								// runner implicitly tests that the shim ACKs the Finished flight
+								// (or, in case, that it is does not), so this exercises the final
+								// ACK.
+								//
+								// TODO(crbug.com/42290594): Once we send partial ACKs, exercise
+								// those here.
+								for _, msg := range next {
+									shouldDiscard := DTLSFragment{Epoch: msg.Epoch, Sequence: 1000, ShouldDiscard: true}
+									c.WriteFragments([]DTLSFragment{shouldDiscard, msg.Fragment(0, len(msg.Data))})
+								}
+							},
+						},
+					},
+					flags: flags,
+				})
+
+				// As a client, the shim must tolerate ACKs in response to its
+				// initial ClientHello, but it will not process them because the
+				// version is not yet known. The second ClientHello, in response
+				// to HelloRetryRequest, however, is ACKed.
+				//
+				// The shim must additionally process ACKs and retransmit its
+				// Finished flight, possibly interleaved with application data.
+				// (The server may send half-RTT data without Finished.)
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					name:     "DTLS-Retransmit-Client" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						// Require a client certificate, so the Finished flight
+						// is large.
+						ClientAuth: RequireAnyClientCert,
+						Bugs: ProtocolBugs{
+							SendHelloRetryRequestCookie: []byte("cookie"), // Send HelloRetryRequest
+							MaxPacketLength:             512,
+							WriteFlightDTLS: func(c *DTLSController, prev, received, next []DTLSMessage, records []DTLSRecordNumberInfo) {
+								if len(received) == 0 || received[0].Type != typeClientHello {
+									// Leave post-handshake flights alone.
+									c.WriteFlight(next)
+									return
+								}
+
+								// This is either HelloRetryRequest in response to ClientHello1,
+								// or ServerHello..Finished in response to ClientHello2.
+								first := records[0]
+								if len(prev) == 0 {
+									// This is HelloRetryRequest in response to ClientHello1. The client
+									// will accept the ACK, but it will ignore it. Do not expect
+									// retransmits to be impacted.
+									first.MessageStartSequence = 0
+									first.MessageStartOffset = 0
+									first.MessageEndSequence = 0
+									first.MessageEndOffset = 0
+								}
+								c.WriteACK(0, []DTLSRecordNumberInfo{first})
+								c.AdvanceClock(useTimeouts[0])
+								c.ReadRetransmit()
+								c.WriteFlight(next)
+							},
+							ACKFlightDTLS: func(c *DTLSController, prev, received []DTLSMessage, records []DTLSRecordNumberInfo) {
+								// The shim will process application data without an ACK.
+								msg := []byte("hello")
+								c.WriteAppData(c.OutEpoch(), msg)
+								c.ReadAppData(c.InEpoch(), expectedReply(msg))
+
+								// After a timeout, the shim will retransmit Finished.
+								c.AdvanceClock(useTimeouts[0])
+								c.ReadRetransmit()
+
+								// Application data still flows.
+								c.WriteAppData(c.OutEpoch(), msg)
+								c.ReadAppData(c.InEpoch(), expectedReply(msg))
+
+								// ACK part of the flight and check that retransmits
+								// are updated.
+								c.WriteACK(c.OutEpoch(), records[len(records)/3:2*len(records)/3])
+								c.AdvanceClock(useTimeouts[1])
+								records = c.ReadRetransmit()
+
+								// ACK the rest. Retransmits should stop.
+								c.WriteACK(c.OutEpoch(), records)
+								for _, t := range useTimeouts[2:] {
+									c.AdvanceClock(t)
+								}
+							},
+						},
+					},
+					shimCertificate: &rsaChainCertificate,
+					flags:           slices.Concat(flags, []string{"-mtu", "512", "-curves", strconv.Itoa(int(CurveX25519MLKEM768))}),
+				})
+
+				// If the client never receives an ACK for the Finished flight, it
+				// is eventually fatal.
+				testCases = append(testCases, testCase{
+					protocol: dtls,
+					name:     "DTLS-Retransmit-Client-FinishedTimeout" + suffix,
+					config: Config{
+						MaxVersion: vers.version,
+						Bugs: ProtocolBugs{
+							ACKFlightDTLS: func(c *DTLSController, prev, received []DTLSMessage, records []DTLSRecordNumberInfo) {
+								for _, t := range useTimeouts[:len(useTimeouts)-1] {
+									c.AdvanceClock(t)
+									c.ReadRetransmit()
+								}
+								c.AdvanceClock(useTimeouts[len(useTimeouts)-1])
+							},
+						},
+					},
+					flags:         flags,
+					shouldFail:    true,
+					expectedError: ":READ_TIMEOUT_EXPIRED:",
+				})
+			}
+		}
 	}
-
-	// Test that exceeding the timeout schedule hits a read
-	// timeout.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS-Retransmit-Timeout",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				TimeoutSchedule: timeouts,
-			},
-		},
-		resumeSession: true,
-		flags:         []string{"-async"},
-		shouldFail:    true,
-		expectedError: ":READ_TIMEOUT_EXPIRED:",
-	})
-
-	// Test that timeout handling has a fudge factor, due to API
-	// problems.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS-Retransmit-Fudge",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				TimeoutSchedule: []time.Duration{
-					timeouts[0] - 10*time.Millisecond,
-				},
-			},
-		},
-		resumeSession: true,
-		flags:         []string{"-async"},
-	})
 
 	// Test that the final Finished retransmitting isn't
 	// duplicated if the peer badly fragments everything.
 	testCases = append(testCases, testCase{
 		testType: serverTest,
 		protocol: dtls,
-		name:     "DTLS-Retransmit-Fragmented",
+		name:     "DTLS-RetransmitFinished-Fragmented",
 		config: Config{
 			MaxVersion: VersionTLS12,
 			Bugs: ProtocolBugs{
-				TimeoutSchedule:          []time.Duration{timeouts[0]},
 				MaxHandshakeRecordLength: 2,
+				ACKFlightDTLS: func(c *DTLSController, prev, received []DTLSMessage, records []DTLSRecordNumberInfo) {
+					c.WriteFlight(prev)
+					c.ReadRetransmit()
+				},
 			},
 		},
 		flags: []string{"-async"},
-	})
-
-	// Test the timeout schedule when a shorter initial timeout duration is set.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS-Retransmit-Short-Client",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				TimeoutSchedule: shortTimeouts[:len(shortTimeouts)-1],
-			},
-		},
-		resumeSession: true,
-		flags: []string{
-			"-async",
-			"-initial-timeout-duration-ms", "250",
-		},
-	})
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		testType: serverTest,
-		name:     "DTLS-Retransmit-Short-Server",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				TimeoutSchedule: shortTimeouts[:len(shortTimeouts)-1],
-			},
-		},
-		resumeSession: true,
-		flags: []string{
-			"-async",
-			"-initial-timeout-duration-ms", "250",
-		},
 	})
 
 	// If the shim sends the last Finished (server full or client resume
@@ -11515,30 +12353,49 @@ func addDTLSRetransmitTests() {
 		},
 		resumeSession: true,
 	})
+}
 
-	// DTLS 1.3 ACK/retransmit tests
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS13-ImmediateACKs",
-		config: Config{
-			MinVersion: VersionTLS13,
-			Bugs: ProtocolBugs{
-				ACKEveryRecord: true,
+func addDTLSReorderTests() {
+	for _, vers := range allVersions(dtls) {
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "ReorderHandshakeFragments-Small-DTLS-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+				Bugs: ProtocolBugs{
+					ReorderHandshakeFragments: true,
+					// Small enough that every handshake message is
+					// fragmented.
+					MaxHandshakeRecordLength: 2,
+				},
 			},
-		},
-	})
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "DTLS12-RejectACKs",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				ACKEveryRecord: true,
+		})
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "ReorderHandshakeFragments-Large-DTLS-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+				Bugs: ProtocolBugs{
+					ReorderHandshakeFragments: true,
+					// Large enough that no handshake message is
+					// fragmented.
+					MaxHandshakeRecordLength: 2048,
+				},
 			},
-		},
-		shouldFail:    true,
-		expectedError: ":UNEXPECTED_RECORD:",
-	})
+		})
+		testCases = append(testCases, testCase{
+			protocol: dtls,
+			name:     "MixCompleteMessageWithFragments-DTLS-" + vers.name,
+			config: Config{
+				MaxVersion: vers.version,
+				Bugs: ProtocolBugs{
+					ReorderHandshakeFragments:       true,
+					MixCompleteMessageWithFragments: true,
+					MaxHandshakeRecordLength:        2,
+				},
+			},
+		})
+	}
 }
 
 func addExportKeyingMaterialTests() {
@@ -12653,7 +13510,7 @@ func addSessionTicketTests() {
 	testCases = append(testCases, testCase{
 		// In TLS 1.2 and below, empty NewSessionTicket messages
 		// mean the server changed its mind on sending a ticket.
-		name: "SendEmptySessionTicket",
+		name: "SendEmptySessionTicket-TLS12",
 		config: Config{
 			MaxVersion: VersionTLS12,
 			Bugs: ProtocolBugs{
@@ -12661,6 +13518,21 @@ func addSessionTicketTests() {
 			},
 		},
 		flags: []string{"-expect-no-session"},
+	})
+
+	testCases = append(testCases, testCase{
+		// In TLS 1.3, empty NewSessionTicket messages are not
+		// allowed.
+		name: "SendEmptySessionTicket-TLS13",
+		config: Config{
+			MaxVersion: VersionTLS13,
+			Bugs: ProtocolBugs{
+				SendEmptySessionTicket: true,
+			},
+		},
+		shouldFail:         true,
+		expectedError:      ":DECODE_ERROR:",
+		expectedLocalError: "remote error: error decoding message",
 	})
 
 	// Test that the server ignores unknown PSK modes.
@@ -12989,6 +13861,43 @@ func addSessionTicketTests() {
 			// has established tickets.
 			flags: []string{"-on-resume-no-ticket"},
 		})
+
+		// SSL_OP_NO_TICKET implies the client must not offer ticket-based
+		// sessions. The client not only should not send the session ticket
+		// extension, but if the server echos the session ID, the client should
+		// reject this.
+		if ver.version < VersionTLS13 {
+			testCases = append(testCases, testCase{
+				name: ver.name + "-NoTicket-NoOffer",
+				config: Config{
+					MinVersion: ver.version,
+					MaxVersion: ver.version,
+				},
+				resumeConfig: &Config{
+					MinVersion: ver.version,
+					MaxVersion: ver.version,
+					Bugs: ProtocolBugs{
+						ExpectNoTLS12TicketSupport: true,
+						// Pretend to accept the session, even though the client
+						// did not offer it. The client should reject this as
+						// invalid. A buggy client will still fail because it
+						// expects resumption, but with a different error.
+						// Ideally, we would test this by actually resuming the
+						// previous session, even though the client did not
+						// provide a ticket.
+						EchoSessionIDInFullHandshake: true,
+					},
+				},
+				resumeSession:        true,
+				expectResumeRejected: true,
+				// Set SSL_OP_NO_TICKET on the second connection, after the first
+				// has established tickets.
+				flags:              []string{"-on-resume-no-ticket"},
+				shouldFail:         true,
+				expectedError:      ":SERVER_ECHOED_INVALID_SESSION_ID:",
+				expectedLocalError: "remote error: illegal parameter",
+			})
+		}
 	}
 }
 
@@ -13276,31 +14185,6 @@ func addChangeCipherSpecTests() {
 				StrayChangeCipherSpec: true,
 			},
 		},
-	})
-
-	// Test that reordered ChangeCipherSpecs are tolerated.
-	testCases = append(testCases, testCase{
-		protocol: dtls,
-		name:     "ReorderChangeCipherSpec-DTLS-Client",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				ReorderChangeCipherSpec: true,
-			},
-		},
-		resumeSession: true,
-	})
-	testCases = append(testCases, testCase{
-		testType: serverTest,
-		protocol: dtls,
-		name:     "ReorderChangeCipherSpec-DTLS-Server",
-		config: Config{
-			MaxVersion: VersionTLS12,
-			Bugs: ProtocolBugs{
-				ReorderChangeCipherSpec: true,
-			},
-		},
-		resumeSession: true,
 	})
 
 	// Test that the contents of ChangeCipherSpec are checked.
@@ -14977,6 +15861,27 @@ func addTLS13HandshakeTests() {
 		},
 		resumeConfig: &Config{
 			MaxVersion: VersionTLS12,
+		},
+		resumeSession: true,
+		earlyData:     true,
+		shouldFail:    true,
+		expectedError: ":WRONG_VERSION_ON_EARLY_DATA:",
+	})
+
+	// Same as above, but the server also sends a warning alert before the
+	// ServerHello. Although the shim predicts TLS 1.3 for 0-RTT, it should
+	// still interpret data before ServerHello in a TLS-1.2-compatible way.
+	testCases = append(testCases, testCase{
+		testType: clientTest,
+		name:     "EarlyDataVersionDowngrade-Client-TLS13-WarningAlert",
+		config: Config{
+			MaxVersion: VersionTLS13,
+		},
+		resumeConfig: &Config{
+			MaxVersion: VersionTLS12,
+			Bugs: ProtocolBugs{
+				SendSNIWarningAlert: true,
+			},
 		},
 		resumeSession: true,
 		earlyData:     true,
@@ -21035,6 +21940,7 @@ func main() {
 	addDTLSReplayTests()
 	addSignatureAlgorithmTests()
 	addDTLSRetransmitTests()
+	addDTLSReorderTests()
 	addExportKeyingMaterialTests()
 	addExportTrafficSecretsTests()
 	addTLSUniqueTests()
