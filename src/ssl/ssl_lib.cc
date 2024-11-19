@@ -364,14 +364,7 @@ void ssl_do_msg_callback(const SSL *ssl, int is_write, int content_type,
                     const_cast<SSL *>(ssl), ssl->msg_callback_arg);
 }
 
-void ssl_get_current_time(const SSL *ssl, struct OPENSSL_timeval *out_clock) {
-  // TODO(martinkr): Change callers to |ssl_ctx_get_current_time| and drop the
-  // |ssl| arg from |current_time_cb| if possible.
-  ssl_ctx_get_current_time(ssl->ctx.get(), out_clock);
-}
-
-void ssl_ctx_get_current_time(const SSL_CTX *ctx,
-                              struct OPENSSL_timeval *out_clock) {
+OPENSSL_timeval ssl_ctx_get_current_time(const SSL_CTX *ctx) {
   if (ctx->current_time_cb != NULL) {
     // TODO(davidben): Update current_time_cb to use OPENSSL_timeval. See
     // https://crbug.com/boringssl/155.
@@ -379,39 +372,34 @@ void ssl_ctx_get_current_time(const SSL_CTX *ctx,
     ctx->current_time_cb(nullptr /* ssl */, &clock);
     if (clock.tv_sec < 0) {
       assert(0);
-      out_clock->tv_sec = 0;
-      out_clock->tv_usec = 0;
+      return {0, 0};
     } else {
-      out_clock->tv_sec = (uint64_t)clock.tv_sec;
-      out_clock->tv_usec = (uint32_t)clock.tv_usec;
+      return {static_cast<uint64_t>(clock.tv_sec),
+              static_cast<uint32_t>(clock.tv_usec)};
     }
-    return;
   }
 
 #if defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
-  out_clock->tv_sec = 1234;
-  out_clock->tv_usec = 1234;
+  return {1234, 1234};
 #elif defined(OPENSSL_WINDOWS)
   struct _timeb time;
   _ftime(&time);
   if (time.time < 0) {
     assert(0);
-    out_clock->tv_sec = 0;
-    out_clock->tv_usec = 0;
+    return {0, 0};
   } else {
-    out_clock->tv_sec = time.time;
-    out_clock->tv_usec = time.millitm * 1000;
+    return {static_cast<uint64_t>(time.time),
+            static_cast<uint32_t>(time.millitm * 1000)};
   }
 #else
   struct timeval clock;
   gettimeofday(&clock, NULL);
   if (clock.tv_sec < 0) {
     assert(0);
-    out_clock->tv_sec = 0;
-    out_clock->tv_usec = 0;
+    return {0, 0};
   } else {
-    out_clock->tv_sec = (uint64_t)clock.tv_sec;
-    out_clock->tv_usec = (uint32_t)clock.tv_usec;
+    return {static_cast<uint64_t>(clock.tv_sec),
+            static_cast<uint32_t>(clock.tv_usec)};
   }
 #endif
 }
@@ -932,7 +920,7 @@ static int ssl_do_post_handshake(SSL *ssl, const SSLMessage &msg) {
 int SSL_process_quic_post_handshake(SSL *ssl) {
   ssl_reset_error_state(ssl);
 
-  if (SSL_in_init(ssl)) {
+  if (ssl->quic_method == nullptr || SSL_in_init(ssl)) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
   }
