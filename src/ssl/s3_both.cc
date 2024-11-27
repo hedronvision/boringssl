@@ -385,7 +385,7 @@ static ssl_open_record_t read_v2_client_hello(SSL *ssl, size_t *out_consumed,
     return ssl_open_record_partial;
   }
 
-  CBS v2_client_hello = CBS(ssl->s3->read_buffer.span().subspan(2, msg_length));
+  CBS v2_client_hello = CBS(in.subspan(2, msg_length));
   // The V2ClientHello without the length is incorporated into the handshake
   // hash. This is only ever called at the start of the handshake, so hs is
   // guaranteed to be non-NULL.
@@ -617,17 +617,6 @@ ssl_open_record_t tls_open_handshake(SSL *ssl, size_t *out_consumed,
   auto ret = tls_open_record(ssl, &type, &body, out_consumed, out_alert, in);
   if (ret != ssl_open_record_success) {
     return ret;
-  }
-
-  // WatchGuard's TLS 1.3 interference bug is very distinctive: they drop the
-  // ServerHello and send the remaining encrypted application data records
-  // as-is. This manifests as an application data record when we expect
-  // handshake. Report a dedicated error code for this case.
-  if (!ssl->server && type == SSL3_RT_APPLICATION_DATA &&
-      ssl->s3->aead_read_ctx->is_null_cipher()) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_APPLICATION_DATA_INSTEAD_OF_HANDSHAKE);
-    *out_alert = SSL_AD_UNEXPECTED_MESSAGE;
-    return ssl_open_record_error;
   }
 
   if (type != SSL3_RT_HANDSHAKE) {
