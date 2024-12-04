@@ -338,7 +338,6 @@ add_library(
   src/crypto/dh_extra/dh_asn1.cc
   src/crypto/dh_extra/params.cc
   src/crypto/digest_extra/digest_extra.cc
-  src/crypto/dilithium/dilithium.cc
   src/crypto/dsa/dsa.cc
   src/crypto/dsa/dsa_asn1.cc
   src/crypto/ec_extra/ec_asn1.cc
