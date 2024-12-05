@@ -375,7 +375,8 @@ bool dtls1_process_handshake_fragments(SSL *ssl, uint8_t *out_alert,
       return false;
     }
 
-    if (msg_hdr.seq < ssl->d1->handshake_read_seq) {
+    if (msg_hdr.seq < ssl->d1->handshake_read_seq ||
+        ssl->d1->handshake_read_overflow) {
       // Ignore fragments from the past. This is a retransmit of data we already
       // received.
       //
@@ -407,9 +408,6 @@ bool dtls1_process_handshake_fragments(SSL *ssl, uint8_t *out_alert,
       // apply immediately after the handshake. As a client, receiving a
       // KeyUpdate or NewSessionTicket does not imply the server has received
       // our Finished. The server may have sent those messages in half-RTT.
-      //
-      // TODO(crbug.com/42290594): Once post-handshake messages are working,
-      // write a test for the half-RTT KeyUpdate case.
       implicit_ack = true;
     }
 
@@ -549,6 +547,9 @@ void dtls1_next_message(SSL *ssl) {
   size_t index = ssl->d1->handshake_read_seq % SSL_MAX_HANDSHAKE_FLIGHT;
   ssl->d1->incoming_messages[index].reset();
   ssl->d1->handshake_read_seq++;
+  if (ssl->d1->handshake_read_seq == 0) {
+    ssl->d1->handshake_read_overflow = true;
+  }
   ssl->s3->has_message = false;
   // If we previously sent a flight, mark it as having a reply, so
   // |on_handshake_complete| can manage post-handshake retransmission.
@@ -674,6 +675,10 @@ static bool add_outgoing(SSL *ssl, bool is_ccs, Array<uint8_t> data) {
   }
 
   if (!is_ccs) {
+    if (ssl->d1->handshake_write_overflow) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
+      return false;
+    }
     // TODO(svaldez): Move this up a layer to fix abstraction for SSLTranscript
     // on hs.
     if (ssl->s3->hs != NULL && !ssl->s3->hs->transcript.Update(data)) {
@@ -681,6 +686,9 @@ static bool add_outgoing(SSL *ssl, bool is_ccs, Array<uint8_t> data) {
       return false;
     }
     ssl->d1->handshake_write_seq++;
+    if (ssl->d1->handshake_write_seq == 0) {
+      ssl->d1->handshake_write_overflow = true;
+    }
   }
 
   DTLSOutgoingMessage msg;
@@ -1081,6 +1089,11 @@ int dtls1_send_ack(SSL *ssl) {
   if (bio_ret <= 0) {
     ssl->s3->rwstate = SSL_ERROR_WANT_WRITE;
     return bio_ret;
+  }
+
+  if (BIO_flush(ssl->wbio.get()) <= 0) {
+    ssl->s3->rwstate = SSL_ERROR_WANT_WRITE;
+    return -1;
   }
 
   return 1;
