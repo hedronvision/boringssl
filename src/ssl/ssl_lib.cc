@@ -963,6 +963,15 @@ static int ssl_read_impl(SSL *ssl) {
       return -1;
     }
 
+    // If a read triggered a DTLS ACK or retransmit, resolve that before reading
+    // more.
+    if (SSL_is_dtls(ssl)) {
+      int ret = ssl->method->flush(ssl);
+      if (ret <= 0) {
+        return ret;
+      }
+    }
+
     // Complete the current handshake, if any. False Start will cause
     // |SSL_do_handshake| to return mid-handshake, so this may require multiple
     // iterations.
@@ -1112,12 +1121,7 @@ int SSL_key_update(SSL *ssl, int request_type) {
     return 0;
   }
 
-  if (!ssl->s3->key_update_pending &&
-      !tls13_add_key_update(ssl, request_type)) {
-    return 0;
-  }
-
-  return 1;
+  return tls13_add_key_update(ssl, request_type);
 }
 
 int SSL_shutdown(SSL *ssl) {

@@ -423,13 +423,6 @@ add_library(
   src/crypto/slhdsa/slhdsa.cc
   src/crypto/slhdsa/thash.cc
   src/crypto/slhdsa/wots.cc
-  src/crypto/spx/spx.cc
-  src/crypto/spx/spx_address.cc
-  src/crypto/spx/spx_fors.cc
-  src/crypto/spx/spx_merkle.cc
-  src/crypto/spx/spx_thash.cc
-  src/crypto/spx/spx_util.cc
-  src/crypto/spx/spx_wots.cc
   src/crypto/stack/stack.cc
   src/crypto/thread.cc
   src/crypto/thread_none.cc
