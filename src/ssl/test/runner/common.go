@@ -31,9 +31,9 @@ const (
 )
 
 const (
-	VersionDTLS10              = 0xfeff
-	VersionDTLS12              = 0xfefd
-	VersionDTLS125Experimental = 0xfc25
+	VersionDTLS10 = 0xfeff
+	VersionDTLS12 = 0xfefd
+	VersionDTLS13 = 0xfefc
 )
 
 var allTLSWireVersions = []uint16{
@@ -45,7 +45,7 @@ var allTLSWireVersions = []uint16{
 }
 
 var allDTLSWireVersions = []uint16{
-	VersionDTLS125Experimental,
+	VersionDTLS13,
 	VersionDTLS12,
 	VersionDTLS10,
 }
@@ -1291,6 +1291,11 @@ type ProtocolBugs struct {
 	// post-handshake transaction) in DTLS. See DTLSController for details.
 	ACKFlightDTLS ACKFlightFunc
 
+	// SkipImplicitACKRead, if true, causes the DTLS 1.3 client to skip
+	// implicitly reading the ACK at the end of the handshake. This may be used
+	// when WriteFlightDTLS consumes the ACK itself.
+	SkipImplicitACKRead bool
+
 	// MockQUICTransport is the mockQUICTransport used when testing
 	// QUIC interfaces.
 	MockQUICTransport *mockQUICTransport
@@ -2121,7 +2126,7 @@ func (c *Config) echCipherSuitePreferences() []HPKECipherSuite {
 func wireToVersion(vers uint16, isDTLS bool) (uint16, bool) {
 	if isDTLS {
 		switch vers {
-		case VersionDTLS125Experimental:
+		case VersionDTLS13:
 			return VersionTLS13, true
 		case VersionDTLS12:
 			return VersionTLS12, true
