@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, Google Inc.
+/* Copyright 2023 The BoringSSL Authors
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,9 +23,9 @@
 #define OPENSSL_UNSTABLE_EXPERIMENTAL_KYBER
 #include <openssl/experimental/kyber.h>
 
+#include "../fipsmodule/keccak/internal.h"
 #include "../test/file_test.h"
 #include "../test/test_util.h"
-#include "../keccak/internal.h"
 #include "./internal.h"
 
 

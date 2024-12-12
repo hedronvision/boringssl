@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Google Inc.
+/* Copyright 2024 The BoringSSL Authors
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,7 +24,7 @@
 #include <openssl/mem.h>
 #include <openssl/mlkem.h>
 
-#include "../keccak/internal.h"
+#include "../fipsmodule/keccak/internal.h"
 #include "../test/file_test.h"
 #include "../test/test_util.h"
 #include "./internal.h"

@@ -1,4 +1,4 @@
-# Copyright (c) 2024, Google Inc.
+# Copyright 2024 The BoringSSL Authors
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -75,6 +75,8 @@ set(
   crypto/fipsmodule/ecdsa/ecdsa.cc.inc
   crypto/fipsmodule/hkdf/hkdf.cc.inc
   crypto/fipsmodule/hmac/hmac.cc.inc
+  crypto/fipsmodule/keccak/keccak.cc.inc
+  crypto/fipsmodule/mldsa/mldsa.cc.inc
   crypto/fipsmodule/modes/cbc.cc.inc
   crypto/fipsmodule/modes/cfb.cc.inc
   crypto/fipsmodule/modes/ctr.cc.inc
@@ -371,7 +373,6 @@ set(
   crypto/fipsmodule/fips_shared_support.cc
   crypto/hpke/hpke.cc
   crypto/hrss/hrss.cc
-  crypto/keccak/keccak.cc
   crypto/kyber/kyber.cc
   crypto/lhash/lhash.cc
   crypto/md4/md4.cc
@@ -629,6 +630,7 @@ set(
   crypto/fipsmodule/ec/p256-nistz.h
   crypto/fipsmodule/ec/p256_table.h
   crypto/fipsmodule/ecdsa/internal.h
+  crypto/fipsmodule/keccak/internal.h
   crypto/fipsmodule/modes/internal.h
   crypto/fipsmodule/rand/internal.h
   crypto/fipsmodule/rsa/internal.h
@@ -637,11 +639,9 @@ set(
   crypto/fipsmodule/tls/internal.h
   crypto/hrss/internal.h
   crypto/internal.h
-  crypto/keccak/internal.h
   crypto/kyber/internal.h
   crypto/lhash/internal.h
   crypto/md5/internal.h
-  crypto/mldsa/internal.h
   crypto/mlkem/internal.h
   crypto/obj/obj_dat.h
   crypto/pkcs7/internal.h
@@ -748,6 +748,7 @@ set(
   crypto/fipsmodule/ec/p256_test.cc
   crypto/fipsmodule/ecdsa/ecdsa_test.cc
   crypto/fipsmodule/hkdf/hkdf_test.cc
+  crypto/fipsmodule/keccak/keccak_test.cc
   crypto/fipsmodule/modes/gcm_test.cc
   crypto/fipsmodule/rand/ctrdrbg_test.cc
   crypto/fipsmodule/service_indicator/service_indicator_test.cc
@@ -756,7 +757,6 @@ set(
   crypto/hpke/hpke_test.cc
   crypto/hrss/hrss_test.cc
   crypto/impl_dispatch_test.cc
-  crypto/keccak/keccak_test.cc
   crypto/kyber/kyber_test.cc
   crypto/lhash/lhash_test.cc
   crypto/md5/md5_test.cc
@@ -845,13 +845,15 @@ set(
   crypto/fipsmodule/ec/p256-nistz_tests.txt
   crypto/fipsmodule/ecdsa/ecdsa_sign_tests.txt
   crypto/fipsmodule/ecdsa/ecdsa_verify_tests.txt
+  crypto/fipsmodule/keccak/keccak_tests.txt
   crypto/fipsmodule/rand/ctrdrbg_vectors.txt
   crypto/hmac_extra/hmac_tests.txt
   crypto/hpke/hpke_test_vectors.txt
-  crypto/keccak/keccak_tests.txt
   crypto/kyber/kyber_tests.txt
-  crypto/mldsa/mldsa_nist_keygen_tests.txt
-  crypto/mldsa/mldsa_nist_siggen_tests.txt
+  crypto/mldsa/mldsa_nist_keygen_65_tests.txt
+  crypto/mldsa/mldsa_nist_keygen_87_tests.txt
+  crypto/mldsa/mldsa_nist_siggen_65_tests.txt
+  crypto/mldsa/mldsa_nist_siggen_87_tests.txt
   crypto/mlkem/mlkem1024_decap_tests.txt
   crypto/mlkem/mlkem1024_encap_tests.txt
   crypto/mlkem/mlkem1024_keygen_tests.txt
@@ -1000,6 +1002,8 @@ set(
   third_party/wycheproof_testvectors/kwp_test.txt
   third_party/wycheproof_testvectors/mldsa_65_standard_sign_test.txt
   third_party/wycheproof_testvectors/mldsa_65_standard_verify_test.txt
+  third_party/wycheproof_testvectors/mldsa_87_standard_sign_test.txt
+  third_party/wycheproof_testvectors/mldsa_87_standard_verify_test.txt
   third_party/wycheproof_testvectors/primality_test.txt
   third_party/wycheproof_testvectors/rsa_oaep_2048_sha1_mgf1sha1_test.txt
   third_party/wycheproof_testvectors/rsa_oaep_2048_sha224_mgf1sha1_test.txt

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, Google Inc.
+/* Copyright 2023 The BoringSSL Authors
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,8 +20,8 @@
 
 #include <openssl/bytestring.h>
 
-#include "../test/file_test.h"
-#include "../test/test_util.h"
+#include "../../test/file_test.h"
+#include "../../test/test_util.h"
 #include "./internal.h"
 
 
@@ -90,7 +90,7 @@ static void KeccakFileTest(FileTest *t) {
 }
 
 TEST(KeccakTest, KeccakTestVectors) {
-  FileTestGTest("crypto/keccak/keccak_tests.txt", KeccakFileTest);
+  FileTestGTest("crypto/fipsmodule/keccak/keccak_tests.txt", KeccakFileTest);
 }
 
 TEST(KeccakTest, MultiPass) {

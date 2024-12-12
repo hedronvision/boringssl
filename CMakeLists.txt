@@ -1,4 +1,4 @@
-# Copyright (c) 2015, Google Inc.
+# Copyright 2015 The BoringSSL Authors
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -374,7 +374,6 @@ add_library(
   src/crypto/fipsmodule/fips_shared_support.cc
   src/crypto/hpke/hpke.cc
   src/crypto/hrss/hrss.cc
-  src/crypto/keccak/keccak.cc
   src/crypto/kyber/kyber.cc
   src/crypto/lhash/lhash.cc
   src/crypto/md4/md4.cc
