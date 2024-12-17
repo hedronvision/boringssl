@@ -181,20 +181,25 @@ const uint16_t kModRoots[128] = {
 
 // reduce_once reduces 0 <= x < 2*kPrime, mod kPrime.
 uint16_t reduce_once(uint16_t x) {
-  assert(x < 2 * kPrime);
+  declassify_assert(x < 2 * kPrime);
   const uint16_t subtracted = x - kPrime;
   uint16_t mask = 0u - (subtracted >> 15);
-  // On Aarch64, omitting a |value_barrier_u16| results in a 2x speedup of
-  // ML-KEM overall and Clang still produces constant-time code using `csel`. On
-  // other platforms & compilers on godbolt that we care about, this code also
-  // produces constant-time output.
+  // Although this is a constant-time select, we omit a value barrier here.
+  // Value barriers impede auto-vectorization (likely because it forces the
+  // value to transit through a general-purpose register). On AArch64, this is a
+  // difference of 2x.
+  //
+  // We usually add value barriers to selects because Clang turns consecutive
+  // selects with the same condition into a branch instead of CMOV/CSEL. This
+  // condition does not occur in ML-KEM, so omitting it seems to be safe so far,
+  // but see |scalar_centered_binomial_distribution_eta_2_with_prf|.
   return (mask & x) | (~mask & subtracted);
 }
 
 // constant time reduce x mod kPrime using Barrett reduction. x must be less
 // than kPrime + 2×kPrime².
 static uint16_t reduce(uint32_t x) {
-  assert(x < kPrime + 2u * kPrime * kPrime);
+  declassify_assert(x < kPrime + 2u * kPrime * kPrime);
   uint64_t product = (uint64_t)x * kBarrettMultiplier;
   uint32_t quotient = (uint32_t)(product >> kBarrettShift);
   uint32_t remainder = x - quotient * kPrime;
@@ -393,16 +398,21 @@ void scalar_centered_binomial_distribution_eta_2_with_prf(
   for (int i = 0; i < DEGREE; i += 2) {
     uint8_t byte = entropy[i / 2];
 
-    uint16_t value = kPrime;
-    value += (byte & 1) + ((byte >> 1) & 1);
+    uint16_t value = (byte & 1) + ((byte >> 1) & 1);
     value -= ((byte >> 2) & 1) + ((byte >> 3) & 1);
-    out->c[i] = reduce_once(value);
+    // Add |kPrime| if |value| underflowed. See |reduce_once| for a discussion
+    // on why the value barrier is omitted. While this could have been written
+    // reduce_once(value + kPrime), this is one extra addition and small range
+    // of |value| tempts some versions of Clang to emit a branch.
+    uint16_t mask = 0u - (value >> 15);
+    out->c[i] = ((value + kPrime) & mask) | (value & ~mask);
 
     byte >>= 4;
-    value = kPrime;
-    value += (byte & 1) + ((byte >> 1) & 1);
+    value = (byte & 1) + ((byte >> 1) & 1);
     value -= ((byte >> 2) & 1) + ((byte >> 3) & 1);
-    out->c[i + 1] = reduce_once(value);
+    // See above.
+    mask = 0u - (value >> 15);
+    out->c[i + 1] = ((value + kPrime) & mask) | (value & ~mask);
   }
 }
 
@@ -528,7 +538,9 @@ int scalar_decode(scalar *out, const uint8_t *in, int bits) {
       element_bits_done += chunk_bits;
     }
 
-    if (element >= kPrime) {
+    // An element is only out of range in the case of invalid input, in which
+    // case it is okay to leak the comparison.
+    if (constant_time_declassify_int(element >= kPrime)) {
       return 0;
     }
     out->c[i] = element;
@@ -577,7 +589,7 @@ static uint16_t compress(uint16_t x, int bits) {
   //   0 <= remainder <= kHalfPrime round to 0
   //   kHalfPrime < remainder <= kPrime + kHalfPrime round to 1
   //   kPrime + kHalfPrime < remainder < 2 * kPrime round to 2
-  assert(remainder < 2u * kPrime);
+  declassify_assert(remainder < 2u * kPrime);
   quotient += 1 & constant_time_lt_w(kHalfPrime, remainder);
   quotient += 1 & constant_time_lt_w(kPrime + kHalfPrime, remainder);
   return quotient & ((1 << bits) - 1);
@@ -689,6 +701,8 @@ void mlkem_generate_key_external_seed(
   hash_g(hashed, augmented_seed, sizeof(augmented_seed));
   const uint8_t *const rho = hashed;
   const uint8_t *const sigma = hashed + 32;
+  // rho is public.
+  CONSTTIME_DECLASSIFY(rho, 32);
   OPENSSL_memcpy(priv->pub.rho, hashed, sizeof(priv->pub.rho));
   matrix_expand(&priv->pub.m, rho);
   uint8_t counter = 0;
@@ -699,6 +713,8 @@ void mlkem_generate_key_external_seed(
   vector_ntt(&error);
   matrix_mult_transpose(&priv->pub.t, &priv->pub.m, &priv->s);
   vector_add(&priv->pub.t, &error);
+  // t is part of the public key and thus is public.
+  CONSTTIME_DECLASSIFY(&priv->pub.t, sizeof(priv->pub.t));
 
   CBB cbb;
   CBB_init_fixed(&cbb, out_encoded_public_key, encoded_public_key_size(RANK));
@@ -889,7 +905,8 @@ bcm_infallible BCM_mlkem768_generate_key(
     uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
     struct BCM_mlkem768_private_key *out_private_key) {
   uint8_t seed[BCM_MLKEM_SEED_BYTES];
-  RAND_bytes(seed, sizeof(seed));
+  BCM_rand_bytes(seed, sizeof(seed));
+  CONSTTIME_SECRET(seed, sizeof(seed));
   if (optional_out_seed) {
     OPENSSL_memcpy(optional_out_seed, seed, sizeof(seed));
   }
@@ -915,7 +932,8 @@ bcm_infallible BCM_mlkem1024_generate_key(
     uint8_t optional_out_seed[BCM_MLKEM_SEED_BYTES],
     struct BCM_mlkem1024_private_key *out_private_key) {
   uint8_t seed[BCM_MLKEM_SEED_BYTES];
-  RAND_bytes(seed, sizeof(seed));
+  BCM_rand_bytes(seed, sizeof(seed));
+  CONSTTIME_SECRET(seed, sizeof(seed));
   if (optional_out_seed) {
     OPENSSL_memcpy(optional_out_seed, seed, sizeof(seed));
   }
@@ -978,13 +996,15 @@ bcm_infallible BCM_mlkem1024_public_from_private(
   return bcm_infallible::approved;
 }
 
-// Calls |MLKEM768_encap_external_entropy| with random bytes from |RAND_bytes|
+// Calls |MLKEM768_encap_external_entropy| with random bytes from
+// |BCM_rand_bytes|
 bcm_infallible BCM_mlkem768_encap(
     uint8_t out_ciphertext[BCM_MLKEM768_CIPHERTEXT_BYTES],
     uint8_t out_shared_secret[BCM_MLKEM_SHARED_SECRET_BYTES],
     const struct BCM_mlkem768_public_key *public_key) {
   uint8_t entropy[BCM_MLKEM_ENCAP_ENTROPY];
-  RAND_bytes(entropy, BCM_MLKEM_ENCAP_ENTROPY);
+  BCM_rand_bytes(entropy, BCM_MLKEM_ENCAP_ENTROPY);
+  CONSTTIME_SECRET(entropy, BCM_MLKEM_ENCAP_ENTROPY);
   BCM_mlkem768_encap_external_entropy(out_ciphertext, out_shared_secret,
                                       public_key, entropy);
   return bcm_infallible::approved;
@@ -995,7 +1015,8 @@ bcm_infallible BCM_mlkem1024_encap(
     uint8_t out_shared_secret[BCM_MLKEM_SHARED_SECRET_BYTES],
     const struct BCM_mlkem1024_public_key *public_key) {
   uint8_t entropy[BCM_MLKEM_ENCAP_ENTROPY];
-  RAND_bytes(entropy, BCM_MLKEM_ENCAP_ENTROPY);
+  BCM_rand_bytes(entropy, BCM_MLKEM_ENCAP_ENTROPY);
+  CONSTTIME_SECRET(entropy, BCM_MLKEM_ENCAP_ENTROPY);
   BCM_mlkem1024_encap_external_entropy(out_ciphertext, out_shared_secret,
                                        public_key, entropy);
   return bcm_infallible::approved;
@@ -1015,6 +1036,8 @@ void mlkem_encap_external_entropy(
   uint8_t key_and_randomness[64];
   mlkem::hash_g(key_and_randomness, input, sizeof(input));
   encrypt_cpa(out_ciphertext, pub, entropy, key_and_randomness + 32);
+  // The ciphertext is public.
+  CONSTTIME_DECLASSIFY(out_ciphertext, mlkem::ciphertext_size(RANK));
   static_assert(BCM_MLKEM_SHARED_SECRET_BYTES == 32, "");
   memcpy(out_shared_secret, key_and_randomness, 32);
 }
@@ -1046,7 +1069,7 @@ bcm_status BCM_mlkem768_decap(
     const uint8_t *ciphertext, size_t ciphertext_len,
     const struct BCM_mlkem768_private_key *private_key) {
   if (ciphertext_len != BCM_MLKEM768_CIPHERTEXT_BYTES) {
-    RAND_bytes(out_shared_secret, BCM_MLKEM_SHARED_SECRET_BYTES);
+    BCM_rand_bytes(out_shared_secret, BCM_MLKEM_SHARED_SECRET_BYTES);
     return bcm_status::failure;
   }
   const struct mlkem::private_key<RANK768> *priv =
@@ -1060,7 +1083,7 @@ bcm_status BCM_mlkem1024_decap(
     const uint8_t *ciphertext, size_t ciphertext_len,
     const struct BCM_mlkem1024_private_key *private_key) {
   if (ciphertext_len != BCM_MLKEM1024_CIPHERTEXT_BYTES) {
-    RAND_bytes(out_shared_secret, BCM_MLKEM_SHARED_SECRET_BYTES);
+    BCM_rand_bytes(out_shared_secret, BCM_MLKEM_SHARED_SECRET_BYTES);
     return bcm_status::failure;
   }
   const struct mlkem::private_key<RANK1024> *priv =

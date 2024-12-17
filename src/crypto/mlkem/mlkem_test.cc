@@ -26,6 +26,7 @@
 
 #include "../fipsmodule/bcm_interface.h"
 #include "../fipsmodule/keccak/internal.h"
+#include "../internal.h"
 #include "../test/file_test.h"
 #include "../test/test_util.h"
 
@@ -103,6 +104,18 @@ void wrapper_1024_encap_external_entropy(
       reinterpret_cast<const BCM_mlkem1024_public_key *>(public_key), entropy);
 }
 
+int wrapper_768_parse_private_key(struct MLKEM768_private_key *out_private_key,
+                                  CBS *in) {
+  return bcm_success(BCM_mlkem768_parse_private_key(
+      reinterpret_cast<BCM_mlkem768_private_key *>(out_private_key), in));
+}
+
+int wrapper_1024_parse_private_key(
+    struct MLKEM1024_private_key *out_private_key, CBS *in) {
+  return bcm_success(BCM_mlkem1024_parse_private_key(
+      reinterpret_cast<BCM_mlkem1024_private_key *>(out_private_key), in));
+}
+
 template <typename PUBLIC_KEY, size_t PUBLIC_KEY_BYTES, typename PRIVATE_KEY,
           size_t PRIVATE_KEY_BYTES,
           void (*GENERATE)(uint8_t *, uint8_t *, PRIVATE_KEY *),
@@ -127,8 +140,8 @@ void BasicTest() {
   {
     auto priv2 = std::make_unique<PRIVATE_KEY>();
     ASSERT_TRUE(FROM_SEED(priv2.get(), seed, sizeof(seed)));
-    EXPECT_EQ(Bytes(Marshal(MARSHAL_PRIVATE, priv.get())),
-              Bytes(Marshal(MARSHAL_PRIVATE, priv2.get())));
+    EXPECT_EQ(Bytes(Declassified(Marshal(MARSHAL_PRIVATE, priv.get()))),
+              Bytes(Declassified(Marshal(MARSHAL_PRIVATE, priv2.get()))));
   }
 
   uint8_t first_two_bytes[2];
@@ -172,8 +185,8 @@ void BasicTest() {
                  sizeof(first_two_bytes));
   CBS_init(&cbs, encoded_private_key.data(), encoded_private_key.size());
   ASSERT_TRUE(PARSE_PRIVATE(priv2.get(), &cbs));
-  EXPECT_EQ(Bytes(encoded_private_key),
-            Bytes(Marshal(MARSHAL_PRIVATE, priv2.get())));
+  EXPECT_EQ(Bytes(Declassified(encoded_private_key)),
+            Bytes(Declassified(Marshal(MARSHAL_PRIVATE, priv2.get()))));
 
   uint8_t ciphertext[CIPHERTEXT_BYTES];
   uint8_t shared_secret1[MLKEM_SHARED_SECRET_BYTES];
@@ -181,28 +194,30 @@ void BasicTest() {
   ENCAP(ciphertext, shared_secret1, pub.get());
   ASSERT_TRUE(
       DECAP(shared_secret2, ciphertext, sizeof(ciphertext), priv.get()));
-  EXPECT_EQ(Bytes(shared_secret1), Bytes(shared_secret2));
+  EXPECT_EQ(Bytes(Declassified(shared_secret1)),
+            Bytes(Declassified(shared_secret2)));
   ASSERT_TRUE(
       DECAP(shared_secret2, ciphertext, sizeof(ciphertext), priv2.get()));
-  EXPECT_EQ(Bytes(shared_secret1), Bytes(shared_secret2));
+  EXPECT_EQ(Bytes(Declassified(shared_secret1)),
+            Bytes(Declassified(shared_secret2)));
 }
 
 TEST(MLKEMTest, Basic768) {
   BasicTest<MLKEM768_public_key, MLKEM768_PUBLIC_KEY_BYTES,
-            MLKEM768_private_key, MLKEM768_PRIVATE_KEY_BYTES,
+            MLKEM768_private_key, BCM_MLKEM768_PRIVATE_KEY_BYTES,
             MLKEM768_generate_key, MLKEM768_private_key_from_seed,
             MLKEM768_public_from_private, MLKEM768_parse_public_key,
-            MLKEM768_marshal_public_key, MLKEM768_parse_private_key,
+            MLKEM768_marshal_public_key, wrapper_768_parse_private_key,
             wrapper_768_marshal_private_key, MLKEM768_CIPHERTEXT_BYTES,
             MLKEM768_encap, MLKEM768_decap>();
 }
 
 TEST(MLKEMTest, Basic1024) {
   BasicTest<MLKEM1024_public_key, MLKEM1024_PUBLIC_KEY_BYTES,
-            MLKEM1024_private_key, MLKEM1024_PRIVATE_KEY_BYTES,
+            MLKEM1024_private_key, BCM_MLKEM1024_PRIVATE_KEY_BYTES,
             MLKEM1024_generate_key, MLKEM1024_private_key_from_seed,
             MLKEM1024_public_from_private, MLKEM1024_parse_public_key,
-            MLKEM1024_marshal_public_key, MLKEM1024_parse_private_key,
+            MLKEM1024_marshal_public_key, wrapper_1024_parse_private_key,
             wrapper_1024_marshal_private_key, MLKEM1024_CIPHERTEXT_BYTES,
             MLKEM1024_encap, MLKEM1024_decap>();
 }
@@ -213,6 +228,7 @@ template <typename PUBLIC_KEY, size_t PUBLIC_KEY_BYTES, typename PRIVATE_KEY,
 void MLKEMKeyGenFileTest(FileTest *t) {
   std::vector<uint8_t> expected_pub_key_bytes, seed, expected_priv_key_bytes;
   ASSERT_TRUE(t->GetBytes(&seed, "seed"));
+  CONSTTIME_SECRET(seed.data(), seed.size());
   ASSERT_TRUE(t->GetBytes(&expected_pub_key_bytes, "public_key"));
   ASSERT_TRUE(t->GetBytes(&expected_priv_key_bytes, "private_key"));
 
@@ -225,7 +241,8 @@ void MLKEMKeyGenFileTest(FileTest *t) {
       Marshal(MARSHAL_PRIVATE, priv.get()));
 
   EXPECT_EQ(Bytes(pub_key_bytes), Bytes(expected_pub_key_bytes));
-  EXPECT_EQ(Bytes(priv_key_bytes), Bytes(expected_priv_key_bytes));
+  EXPECT_EQ(Bytes(Declassified(priv_key_bytes)),
+            Bytes(expected_priv_key_bytes));
 }
 
 TEST(MLKEMTest, KeyGen768TestVectors) {
@@ -297,6 +314,7 @@ void MLKEMEncapFileTest(FileTest *t) {
   std::vector<uint8_t> pub_key_bytes, entropy, expected_ciphertext,
       expected_shared_secret;
   ASSERT_TRUE(t->GetBytes(&entropy, "entropy"));
+  CONSTTIME_SECRET(entropy.data(), entropy.size());
   ASSERT_TRUE(t->GetBytes(&pub_key_bytes, "public_key"));
   ASSERT_TRUE(t->GetBytes(&expected_ciphertext, "ciphertext"));
   ASSERT_TRUE(t->GetBytes(&expected_shared_secret, "shared_secret"));
@@ -317,7 +335,7 @@ void MLKEMEncapFileTest(FileTest *t) {
   ENCAP(ciphertext, shared_secret, &pub_key, entropy.data());
 
   ASSERT_EQ(Bytes(expected_ciphertext), Bytes(ciphertext));
-  ASSERT_EQ(Bytes(expected_shared_secret), Bytes(shared_secret));
+  ASSERT_EQ(Bytes(expected_shared_secret), Bytes(Declassified(shared_secret)));
 }
 
 TEST(MLKEMTest, Encap768TestVectors) {
@@ -370,16 +388,16 @@ void MLKEMDecapFileTest(FileTest *t) {
 TEST(MLKEMTest, Decap768TestVectors) {
   FileTestGTest(
       "crypto/mlkem/mlkem768_decap_tests.txt",
-      MLKEMDecapFileTest<MLKEM768_private_key, MLKEM768_PRIVATE_KEY_BYTES,
-                         MLKEM768_parse_private_key, MLKEM768_CIPHERTEXT_BYTES,
-                         MLKEM768_decap>);
+      MLKEMDecapFileTest<MLKEM768_private_key, BCM_MLKEM768_PRIVATE_KEY_BYTES,
+                         wrapper_768_parse_private_key,
+                         MLKEM768_CIPHERTEXT_BYTES, MLKEM768_decap>);
 }
 
 TEST(MLKEMTest, Decap1024TestVectors) {
   FileTestGTest(
       "crypto/mlkem/mlkem1024_decap_tests.txt",
-      MLKEMDecapFileTest<MLKEM1024_private_key, MLKEM1024_PRIVATE_KEY_BYTES,
-                         MLKEM1024_parse_private_key,
+      MLKEMDecapFileTest<MLKEM1024_private_key, BCM_MLKEM1024_PRIVATE_KEY_BYTES,
+                         wrapper_1024_parse_private_key,
                          MLKEM1024_CIPHERTEXT_BYTES, MLKEM1024_decap>);
 }
 
@@ -407,15 +425,15 @@ void MLKEMNistDecapFileTest(FileTest *t) {
 TEST(MLKEMTest, NistDecap768TestVectors) {
   FileTestGTest(
       "crypto/mlkem/mlkem768_nist_decap_tests.txt",
-      MLKEMNistDecapFileTest<MLKEM768_private_key, MLKEM768_parse_private_key,
-                             MLKEM768_decap>);
+      MLKEMNistDecapFileTest<MLKEM768_private_key,
+                             wrapper_768_parse_private_key, MLKEM768_decap>);
 }
 
 TEST(MLKEMTest, NistDecap1024TestVectors) {
   FileTestGTest(
       "crypto/mlkem/mlkem1024_nist_decap_tests.txt",
-      MLKEMNistDecapFileTest<MLKEM1024_private_key, MLKEM1024_parse_private_key,
-                             MLKEM1024_decap>);
+      MLKEMNistDecapFileTest<MLKEM1024_private_key,
+                             wrapper_1024_parse_private_key, MLKEM1024_decap>);
 }
 
 template <
@@ -476,7 +494,7 @@ TEST(MLKEMTest, Iterate768) {
   // ML-KEM.
   uint8_t result[32];
   IteratedTest<MLKEM768_public_key, MLKEM768_PUBLIC_KEY_BYTES,
-               MLKEM768_private_key, MLKEM768_PRIVATE_KEY_BYTES,
+               MLKEM768_private_key, BCM_MLKEM768_PRIVATE_KEY_BYTES,
                wrapper_768_generate_key_external_seed,
                MLKEM768_public_from_private, wrapper_768_marshal_private_key,
                MLKEM768_CIPHERTEXT_BYTES, wrapper_768_encap_external_entropy,
@@ -497,7 +515,7 @@ TEST(MLKEMTest, Iterate1024) {
   // ML-KEM.
   uint8_t result[32];
   IteratedTest<MLKEM1024_public_key, MLKEM1024_PUBLIC_KEY_BYTES,
-               MLKEM1024_private_key, MLKEM1024_PRIVATE_KEY_BYTES,
+               MLKEM1024_private_key, BCM_MLKEM1024_PRIVATE_KEY_BYTES,
                wrapper_1024_generate_key_external_seed,
                MLKEM1024_public_from_private, wrapper_1024_marshal_private_key,
                MLKEM1024_CIPHERTEXT_BYTES, wrapper_1024_encap_external_entropy,
