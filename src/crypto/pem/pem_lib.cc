@@ -24,6 +24,7 @@
 #include <openssl/x509.h>
 
 #include "../internal.h"
+#include "internal.h"
 
 
 #define MIN_LENGTH 4
@@ -326,8 +327,8 @@ err:
   return ret;
 }
 
-int PEM_do_header(EVP_CIPHER_INFO *cipher, unsigned char *data, long *plen,
-                  pem_password_cb *callback, void *u) {
+int PEM_do_header(const EVP_CIPHER_INFO *cipher, unsigned char *data,
+                  long *plen, pem_password_cb *callback, void *u) {
   int i = 0, j, o, pass_len;
   long len;
   EVP_CIPHER_CTX ctx;
@@ -350,14 +351,14 @@ int PEM_do_header(EVP_CIPHER_INFO *cipher, unsigned char *data, long *plen,
     return 0;
   }
 
-  if (!EVP_BytesToKey(cipher->cipher, EVP_md5(), &(cipher->iv[0]),
+  if (!EVP_BytesToKey(cipher->cipher, EVP_md5(), cipher->iv,
                       (unsigned char *)buf, pass_len, 1, key, NULL)) {
     return 0;
   }
 
   j = (int)len;
   EVP_CIPHER_CTX_init(&ctx);
-  o = EVP_DecryptInit_ex(&ctx, cipher->cipher, NULL, key, &(cipher->iv[0]));
+  o = EVP_DecryptInit_ex(&ctx, cipher->cipher, NULL, key, cipher->iv);
   if (o) {
     o = EVP_DecryptUpdate(&ctx, data, &i, data, j);
   }
@@ -488,6 +489,7 @@ int PEM_write_bio(BIO *bp, const char *name, const char *header,
   unsigned char *buf = NULL;
   EVP_ENCODE_CTX ctx;
   int reason = ERR_R_BUF_LIB;
+  int retval = 0;
 
   EVP_EncodeInit(&ctx);
   nlen = strlen(name);
@@ -525,20 +527,19 @@ int PEM_write_bio(BIO *bp, const char *name, const char *header,
   if ((outl > 0) && (BIO_write(bp, (char *)buf, outl) != outl)) {
     goto err;
   }
-  OPENSSL_free(buf);
-  buf = NULL;
   if ((BIO_write(bp, "-----END ", 9) != 9) ||
       (BIO_write(bp, name, nlen) != nlen) ||
       (BIO_write(bp, "-----\n", 6) != 6)) {
     goto err;
   }
-  return i + outl;
+  retval = i + outl;
+
 err:
-  if (buf) {
-    OPENSSL_free(buf);
+  if (retval == 0) {
+    OPENSSL_PUT_ERROR(PEM, reason);
   }
-  OPENSSL_PUT_ERROR(PEM, reason);
-  return 0;
+  OPENSSL_free(buf);
+  return retval;
 }
 
 int PEM_read(FILE *fp, char **name, char **header, unsigned char **data,

@@ -50,6 +50,7 @@ test_support_sources = [
     "src/crypto/lhash/internal.h",
     "src/crypto/md5/internal.h",
     "src/crypto/obj/obj_dat.h",
+    "src/crypto/pem/internal.h",
     "src/crypto/pkcs7/internal.h",
     "src/crypto/pkcs8/internal.h",
     "src/crypto/poly1305/internal.h",
