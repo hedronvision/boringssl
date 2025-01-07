@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <string_view>
+
 #include <openssl/base64.h>
 #include <openssl/buf.h>
 #include <openssl/des.h>
@@ -29,7 +31,7 @@
 
 #define MIN_LENGTH 4
 
-static int load_iv(char **fromp, unsigned char *to, size_t num);
+static int load_iv(const char **fromp, unsigned char *to, size_t num);
 static int check_pem(const char *nm, const char *name);
 
 // PEM_proc_type appends a Proc-Type header to |buf|, determined by |type|.
@@ -60,18 +62,19 @@ static void PEM_dek_info(char buf[PEM_BUFSIZE], const char *type, size_t len,
   OPENSSL_strlcat(buf, "DEK-Info: ", PEM_BUFSIZE);
   OPENSSL_strlcat(buf, type, PEM_BUFSIZE);
   OPENSSL_strlcat(buf, ",", PEM_BUFSIZE);
-  size_t buf_len = strlen(buf);
-  // We must write an additional |2 * len + 2| bytes after |buf_len|, including
-  // the trailing newline and NUL.
-  if (len > (PEM_BUFSIZE - buf_len - 2) / 2) {
+
+  const size_t used = strlen(buf);
+  const size_t available = PEM_BUFSIZE - used;
+  if (len * 2 < len || len * 2 + 2 < len || available < len * 2 + 2) {
     return;
   }
+
   for (size_t i = 0; i < len; i++) {
-    buf[buf_len + i * 2] = map[(str[i] >> 4) & 0x0f];
-    buf[buf_len + i * 2 + 1] = map[(str[i]) & 0x0f];
+    buf[used + i * 2] = map[(str[i] >> 4) & 0x0f];
+    buf[used + i * 2 + 1] = map[(str[i]) & 0x0f];
   }
-  buf[buf_len + len * 2] = '\n';
-  buf[buf_len + len * 2 + 1] = '\0';
+  buf[used + len * 2] = '\n';
+  buf[used + len * 2 + 1] = '\0';
 }
 
 void *PEM_ASN1_read(d2i_of_void *d2i, const char *name, FILE *fp, void **x,
@@ -143,19 +146,19 @@ static int check_pem(const char *nm, const char *name) {
   return 0;
 }
 
-static const EVP_CIPHER *cipher_by_name(const char *name) {
+static const EVP_CIPHER *cipher_by_name(std::string_view name) {
   // This is similar to the (deprecated) function |EVP_get_cipherbyname|. Note
   // the PEM code assumes that ciphers have at least 8 bytes of IV, at most 20
   // bytes of overhead and generally behave like CBC mode.
-  if (0 == strcmp(name, SN_des_cbc)) {
+  if (name == SN_des_cbc) {
     return EVP_des_cbc();
-  } else if (0 == strcmp(name, SN_des_ede3_cbc)) {
+  } else if (name == SN_des_ede3_cbc) {
     return EVP_des_ede3_cbc();
-  } else if (0 == strcmp(name, SN_aes_128_cbc)) {
+  } else if (name == SN_aes_128_cbc) {
     return EVP_aes_128_cbc();
-  } else if (0 == strcmp(name, SN_aes_192_cbc)) {
+  } else if (name == SN_aes_192_cbc) {
     return EVP_aes_192_cbc();
-  } else if (0 == strcmp(name, SN_aes_256_cbc)) {
+  } else if (name == SN_aes_256_cbc) {
     return EVP_aes_256_cbc();
   } else {
     return NULL;
@@ -377,11 +380,7 @@ int PEM_do_header(const EVP_CIPHER_INFO *cipher, unsigned char *data,
   return 1;
 }
 
-int PEM_get_EVP_CIPHER_INFO(char *header, EVP_CIPHER_INFO *cipher) {
-  const EVP_CIPHER *enc = NULL;
-  char *p, c;
-  char **header_pp = &header;
-
+int PEM_get_EVP_CIPHER_INFO(const char *header, EVP_CIPHER_INFO *cipher) {
   cipher->cipher = NULL;
   OPENSSL_memset(cipher->iv, 0, sizeof(cipher->iv));
   if ((header == NULL) || (*header == '\0') || (*header == '\n')) {
@@ -418,40 +417,38 @@ int PEM_get_EVP_CIPHER_INFO(char *header, EVP_CIPHER_INFO *cipher) {
   }
   header += 10;
 
-  p = header;
+  const char *p = header;
   for (;;) {
-    c = *header;
+    char c = *header;
     if (!((c >= 'A' && c <= 'Z') || c == '-' || OPENSSL_isdigit(c))) {
       break;
     }
     header++;
   }
-  *header = '\0';
-  cipher->cipher = enc = cipher_by_name(p);
-  *header = c;
+  cipher->cipher = cipher_by_name(std::string_view(p, header - p));
   header++;
-
-  if (enc == NULL) {
+  if (cipher->cipher == NULL) {
     OPENSSL_PUT_ERROR(PEM, PEM_R_UNSUPPORTED_ENCRYPTION);
     return 0;
   }
   // The IV parameter must be at least 8 bytes long to be used as the salt in
   // the KDF. (This should not happen given |cipher_by_name|.)
-  if (EVP_CIPHER_iv_length(enc) < 8) {
+  if (EVP_CIPHER_iv_length(cipher->cipher) < 8) {
     assert(0);
     OPENSSL_PUT_ERROR(PEM, PEM_R_UNSUPPORTED_ENCRYPTION);
     return 0;
   }
-  if (!load_iv(header_pp, &(cipher->iv[0]), EVP_CIPHER_iv_length(enc))) {
+  const char **header_pp = &header;
+  if (!load_iv(header_pp, cipher->iv, EVP_CIPHER_iv_length(cipher->cipher))) {
     return 0;
   }
 
   return 1;
 }
 
-static int load_iv(char **fromp, unsigned char *to, size_t num) {
+static int load_iv(const char **fromp, unsigned char *to, size_t num) {
   uint8_t v;
-  char *from;
+  const char *from;
 
   from = *fromp;
   for (size_t i = 0; i < num; i++) {

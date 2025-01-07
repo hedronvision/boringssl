@@ -199,7 +199,7 @@ static int get_cert_by_subject(X509_LOOKUP *xl, int type, X509_NAME *name,
   } data;
   int ok = 0;
   size_t i;
-  int j, k;
+  int k;
   uint32_t h;
   uint32_t hash_array[2];
   int hash_index;
@@ -242,8 +242,10 @@ static int get_cert_by_subject(X509_LOOKUP *xl, int type, X509_NAME *name,
       size_t idx;
       BY_DIR_HASH htmp, *hent;
       ent = sk_BY_DIR_ENTRY_value(ctx->dirs, i);
-      j = strlen(ent->dir) + 1 + 8 + 6 + 1 + 1;
-      if (!BUF_MEM_grow(b, j)) {
+      if (!BUF_MEM_grow(b, strlen(ent->dir) + /* foreslash */ 1 +
+                               /* h, in hex */ 8 + /* period */ 1 +
+                               /* optional `postfix` */ 1 +
+                               /* k */ DECIMAL_SIZE(k) + /* NUL */ 1)) {
         goto finish;
       }
       if (type == X509_LU_CRL && ent->hashes) {

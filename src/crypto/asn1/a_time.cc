@@ -69,16 +69,13 @@ int ASN1_TIME_check(const ASN1_TIME *t) {
 }
 
 // Convert an ASN1_TIME structure to GeneralizedTime
-ASN1_GENERALIZEDTIME *ASN1_TIME_to_generalizedtime(const ASN1_TIME *t,
+ASN1_GENERALIZEDTIME *ASN1_TIME_to_generalizedtime(const ASN1_TIME *in,
                                                    ASN1_GENERALIZEDTIME **out) {
-  ASN1_GENERALIZEDTIME *ret = NULL;
-  char *str;
-  int newlen;
-
-  if (!ASN1_TIME_check(t)) {
+  if (!ASN1_TIME_check(in)) {
     return NULL;
   }
 
+  ASN1_GENERALIZEDTIME *ret = NULL;
   if (!out || !*out) {
     if (!(ret = ASN1_GENERALIZEDTIME_new())) {
       goto err;
@@ -88,28 +85,30 @@ ASN1_GENERALIZEDTIME *ASN1_TIME_to_generalizedtime(const ASN1_TIME *t,
   }
 
   // If already GeneralizedTime just copy across
-  if (t->type == V_ASN1_GENERALIZEDTIME) {
-    if (!ASN1_STRING_set(ret, t->data, t->length)) {
+  if (in->type == V_ASN1_GENERALIZEDTIME) {
+    if (!ASN1_STRING_set(ret, in->data, in->length)) {
       goto err;
     }
     goto done;
   }
 
-  // grow the string
-  if (!ASN1_STRING_set(ret, NULL, t->length + 2)) {
+  // Grow the string to accomodate the two-digit century.
+  if (!ASN1_STRING_set(ret, NULL, in->length + 2)) {
     goto err;
   }
-  // ASN1_STRING_set() allocated 'len + 1' bytes.
-  newlen = t->length + 2 + 1;
-  str = (char *)ret->data;
-  // Work out the century and prepend
-  if (t->data[0] >= '5') {
-    OPENSSL_strlcpy(str, "19", newlen);
-  } else {
-    OPENSSL_strlcpy(str, "20", newlen);
-  }
 
-  OPENSSL_strlcat(str, (char *)t->data, newlen);
+  {
+    char *const out_str = (char *)ret->data;
+    // |ASN1_STRING_set| also allocates an additional byte for a trailing NUL.
+    const size_t out_str_capacity = in->length + 2 + 1;
+    // Work out the century and prepend
+    if (in->data[0] >= '5') {
+      OPENSSL_strlcpy(out_str, "19", out_str_capacity);
+    } else {
+      OPENSSL_strlcpy(out_str, "20", out_str_capacity);
+    }
+    OPENSSL_strlcat(out_str, (const char *)in->data, out_str_capacity);
+  }
 
 done:
   if (out != NULL && *out == NULL) {
@@ -131,7 +130,7 @@ int ASN1_TIME_set_string(ASN1_TIME *s, const char *str) {
 
 int ASN1_TIME_set_string_X509(ASN1_TIME *s, const char *str) {
   CBS cbs;
-  CBS_init(&cbs, (const uint8_t*)str, strlen(str));
+  CBS_init(&cbs, (const uint8_t *)str, strlen(str));
   int type;
   struct tm tm;
   if (CBS_parse_utc_time(&cbs, /*out_tm=*/NULL,

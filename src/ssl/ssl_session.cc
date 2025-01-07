@@ -830,9 +830,10 @@ int SSL_SESSION_up_ref(SSL_SESSION *session) {
 }
 
 void SSL_SESSION_free(SSL_SESSION *session) {
-  if (session != nullptr) {
-    session->DecRefInternal();
+  if (session == nullptr) {
+    return;
   }
+  session->DecRefInternal();
 }
 
 const uint8_t *SSL_SESSION_get_id(const SSL_SESSION *session,

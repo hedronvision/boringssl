@@ -402,7 +402,7 @@ extern "C++" {
 #define BORINGSSL_NO_CXX
 #endif
 
-}       // extern C++
+}  // extern C++
 #endif  // !BORINGSSL_NO_CXX
 
 #if defined(BORINGSSL_NO_CXX)
