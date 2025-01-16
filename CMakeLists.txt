@@ -424,6 +424,7 @@ add_library(
   src/crypto/sha/sha512.cc
   src/crypto/siphash/siphash.cc
   src/crypto/slhdsa/slhdsa.cc
+  src/crypto/spake2plus/spake2plus.cc
   src/crypto/stack/stack.cc
   src/crypto/thread.cc
   src/crypto/thread_none.cc
