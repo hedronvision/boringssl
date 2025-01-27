@@ -696,9 +696,6 @@ func (hs *serverHandshakeState) doTLS13Handshake() error {
 		hs.hello.hasKeyShare = false
 	}
 
-	firstHelloRetryRequest := true
-
-ResendHelloRetryRequest:
 	var sendHelloRetryRequest bool
 	cipherSuite := hs.suite.id
 	if config.Bugs.SendHelloRetryRequestCipherSuite != 0 {
@@ -906,9 +903,14 @@ ResendHelloRetryRequest:
 			return err
 		}
 
-		if firstHelloRetryRequest && config.Bugs.SecondHelloRetryRequest {
-			firstHelloRetryRequest = false
-			goto ResendHelloRetryRequest
+		if config.Bugs.SecondHelloRetryRequest {
+			c.writeRecord(recordTypeHandshake, helloRetryRequest.marshal())
+			// The peer should reject this. Read from the connection to pick up the alert.
+			_, err := c.readHandshake()
+			if err != nil {
+				return err
+			}
+			return errors.New("tls: client sent message instead of alert")
 		}
 	}
 
@@ -1066,32 +1068,33 @@ ResendHelloRetryRequest:
 		c.writeRecord(recordTypeHandshake, encryptedExtensions.marshal())
 	}
 
-	if hs.sessionState == nil {
-		if config.ClientAuth >= RequestClientCert {
-			// Request a client certificate
-			certReq := &certificateRequestMsg{
-				vers:                  c.wireVersion,
-				hasSignatureAlgorithm: !config.Bugs.OmitCertificateRequestAlgorithms,
-				hasRequestContext:     true,
-				requestContext:        config.Bugs.SendRequestContext,
-				customExtension:       config.Bugs.SendCustomCertificateRequest,
-			}
-			if !config.Bugs.NoSignatureAlgorithms {
-				certReq.signatureAlgorithms = config.verifySignatureAlgorithms()
-			}
-
-			// An empty list of certificateAuthorities signals to
-			// the client that it may send any certificate in response
-			// to our request. When we know the CAs we trust, then
-			// we can send them down, so that the client can choose
-			// an appropriate certificate to give to us.
-			if config.ClientCAs != nil {
-				certReq.certificateAuthorities = config.ClientCAs.Subjects()
-			}
-			hs.writeServerHash(certReq.marshal())
-			c.writeRecord(recordTypeHandshake, certReq.marshal())
+	requestClientCert := config.ClientAuth >= RequestClientCert && (hs.sessionState == nil || config.Bugs.AlwaysSendCertificateRequest)
+	if requestClientCert {
+		// Request a client certificate
+		certReq := &certificateRequestMsg{
+			vers:                  c.wireVersion,
+			hasSignatureAlgorithm: !config.Bugs.OmitCertificateRequestAlgorithms,
+			hasRequestContext:     true,
+			requestContext:        config.Bugs.SendRequestContext,
+			customExtension:       config.Bugs.SendCustomCertificateRequest,
+		}
+		if !config.Bugs.NoSignatureAlgorithms {
+			certReq.signatureAlgorithms = config.verifySignatureAlgorithms()
 		}
 
+		// An empty list of certificateAuthorities signals to
+		// the client that it may send any certificate in response
+		// to our request. When we know the CAs we trust, then
+		// we can send them down, so that the client can choose
+		// an appropriate certificate to give to us.
+		if config.ClientCAs != nil {
+			certReq.certificateAuthorities = config.ClientCAs.Subjects()
+		}
+		hs.writeServerHash(certReq.marshal())
+		c.writeRecord(recordTypeHandshake, certReq.marshal())
+	}
+
+	if hs.sessionState == nil || config.Bugs.AlwaysSendCertificate {
 		certMsg := &certificateMsg{
 			hasRequestContext: true,
 		}
@@ -1306,7 +1309,7 @@ ResendHelloRetryRequest:
 
 	// If we requested a client certificate, then the client must send a
 	// certificate message, even if it's empty.
-	if config.ClientAuth >= RequestClientCert {
+	if requestClientCert {
 		certMsg, err := readHandshakeType[certificateMsg](c)
 		if err != nil {
 			return err

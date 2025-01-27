@@ -15870,8 +15870,9 @@ func addTLS13HandshakeTests() {
 				SecondHelloRetryRequest: true,
 			},
 		},
-		shouldFail:    true,
-		expectedError: ":UNEXPECTED_MESSAGE:",
+		shouldFail:         true,
+		expectedError:      ":UNEXPECTED_MESSAGE:",
+		expectedLocalError: "remote error: unexpected message",
 	})
 
 	testCases = append(testCases, testCase{
@@ -17009,6 +17010,41 @@ func addTLS13HandshakeTests() {
 			peerCertificate: &rsaCertificate,
 		},
 		shimCertificate:    &rsaCertificate,
+		shouldFail:         true,
+		expectedError:      ":UNEXPECTED_MESSAGE:",
+		expectedLocalError: "remote error: unexpected message",
+	})
+
+	// PSK/resumption handshakes should not accept CertificateRequest or
+	// Certificate messages.
+	testCases = append(testCases, testCase{
+		testType: clientTest,
+		name:     "CertificateInResumption-TLS13",
+		config: Config{
+			MinVersion: VersionTLS13,
+			MaxVersion: VersionTLS13,
+			Bugs: ProtocolBugs{
+				AlwaysSendCertificate: true,
+			},
+		},
+		resumeSession:      true,
+		shouldFail:         true,
+		expectedError:      ":UNEXPECTED_MESSAGE:",
+		expectedLocalError: "remote error: unexpected message",
+	})
+	testCases = append(testCases, testCase{
+		testType: clientTest,
+		name:     "CertificateRequestInResumption-TLS13",
+		config: Config{
+			MinVersion: VersionTLS13,
+			MaxVersion: VersionTLS13,
+			ClientAuth: RequireAnyClientCert,
+			Bugs: ProtocolBugs{
+				AlwaysSendCertificateRequest: true,
+			},
+		},
+		shimCertificate:    &rsaCertificate,
+		resumeSession:      true,
 		shouldFail:         true,
 		expectedError:      ":UNEXPECTED_MESSAGE:",
 		expectedLocalError: "remote error: unexpected message",
