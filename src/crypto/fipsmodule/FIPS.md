@@ -20,7 +20,22 @@ BoringCrypto has undergone the following validations:
 
 On 2025-01-16, the FedRAMP Board published an [updated policy](https://www.fedramp.gov/updates/docs/cryptographic-module/) on cryptographic modules. That policy suggests that module vendors should “promote the use of update streams over the use of validated module streams”. An _update stream_ “contains the latest patches and updates to be applied to software, regardless of the FIPS-validation status of the changed software”.
 
-BoringSSL's `main` branch is the update stream for the module. We intend to perform validations such that all changes to the module are submitted to the CMVP within six months, as required by FRR7.
+BoringSSL's `main` branch is the update stream for the module. We intend to perform validations such that all major changes to the module are submitted to the CMVP within six months, as required by FRR7.
+
+The installation instructions, which are found in the security policy for the validated module stream, are as follows for the update stream:
+
+```sh
+printf "set(CMAKE_C_COMPILER \"clang\")\nset(CMAKE_CXX_COMPILER \"clang++\")\n" > ${HOME}/toolchain
+git clone https://boringssl.googlesource.com/boringssl
+cd boringssl
+mkdir build && cd build
+cmake -GNinja -DCMAKE_TOOLCHAIN_FILE=${HOME}/toolchain -DFIPS=1 -DCMAKE_BUILD_TYPE=Release ..
+ninja && ninja run_tests
+```
+
+The latest stable versions of Clang, Go, Ninja, and CMake should be used.
+
+On the upstream stream, `FIPS_version` will return zero to indicate that it is not the validated module stream.
 
 ## Running ACVP tests
 
