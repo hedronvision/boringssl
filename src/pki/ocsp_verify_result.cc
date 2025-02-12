@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ocsp_verify_result.h"
+#include <openssl/pki/ocsp.h>
 
 BSSL_NAMESPACE_BEGIN
-
-OCSPVerifyResult::OCSPVerifyResult() = default;
-OCSPVerifyResult::OCSPVerifyResult(const OCSPVerifyResult &) = default;
-OCSPVerifyResult::~OCSPVerifyResult() = default;
 
 bool OCSPVerifyResult::operator==(const OCSPVerifyResult &other) const {
   if (response_status != other.response_status) {

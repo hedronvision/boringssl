@@ -2130,16 +2130,6 @@ func addBasicTests() {
 			expectedError:   ":UNKNOWN_CERTIFICATE_TYPE:",
 		},
 		{
-			name: "NoCheckClientCertificateTypes",
-			config: Config{
-				MaxVersion:             VersionTLS12,
-				ClientAuth:             RequestClientCert,
-				ClientCertificateTypes: []byte{CertTypeECDSASign},
-			},
-			shimCertificate: &rsaCertificate,
-			flags:           []string{"-no-check-client-certificate-type"},
-		},
-		{
 			name: "UnauthenticatedECDH",
 			config: Config{
 				MaxVersion:   VersionTLS12,
@@ -8766,7 +8756,7 @@ func addExtensionTests() {
 					resumeSession: true,
 					shouldFail:    true,
 					// The maximum session ID length is 32.
-					expectedError: ":DECODE_ERROR:",
+					expectedError: ":CLIENTHELLO_PARSE_FAILED:",
 				})
 			}
 
@@ -13914,19 +13904,6 @@ func addCurveTests() {
 		expectedError:   ":WRONG_CURVE:",
 	})
 
-	// This behavior may, temporarily, be disabled with a flag.
-	testCases = append(testCases, testCase{
-		testType: serverTest,
-		name:     "NoCheckECDSACurve-TLS12",
-		config: Config{
-			MinVersion:       VersionTLS12,
-			MaxVersion:       VersionTLS12,
-			CurvePreferences: []CurveID{CurveP384},
-		},
-		shimCertificate: &ecdsaP256Certificate,
-		flags:           []string{"-no-check-ecdsa-curve"},
-	})
-
 	// If the ECDSA certificate is ineligible due to a curve mismatch, the
 	// server may still consider a PSK cipher suite.
 	testCases = append(testCases, testCase{
@@ -15294,6 +15271,11 @@ func addTrailingMessageDataTests() {
 			t.test.expectedLocalError = ""
 		}
 
+		if t.messageType == typeClientHello {
+			// We have a different error for ClientHello parsing.
+			t.test.expectedError = ":CLIENTHELLO_PARSE_FAILED:"
+		}
+
 		if t.messageType == typeFinished {
 			// Bad Finished messages read as the verify data having
 			// the wrong length.
@@ -15448,7 +15430,7 @@ func addTLS13HandshakeTests() {
 			},
 		},
 		shouldFail:         true,
-		expectedError:      ":DECODE_ERROR:",
+		expectedError:      ":CLIENTHELLO_PARSE_FAILED:",
 		expectedLocalError: "remote error: error decoding message",
 	})
 	testCases = append(testCases, testCase{
@@ -15461,7 +15443,7 @@ func addTLS13HandshakeTests() {
 			},
 		},
 		shouldFail:         true,
-		expectedError:      ":DECODE_ERROR:",
+		expectedError:      ":CLIENTHELLO_PARSE_FAILED:",
 		expectedLocalError: "remote error: error decoding message",
 	})
 
