@@ -93,8 +93,6 @@ test_support_sources = [
     "src/pki/name_constraints.h",
     "src/pki/nist_pkits_unittest.h",
     "src/pki/ocsp.h",
-    "src/pki/ocsp_revocation_status.h",
-    "src/pki/ocsp_verify_result.h",
     "src/pki/parse_certificate.h",
     "src/pki/parse_name.h",
     "src/pki/parse_values.h",
