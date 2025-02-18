@@ -2879,12 +2879,8 @@ bool ssl_setup_pake_shares(SSL_HANDSHAKE *hs) {
     return true;
   }
 
-  Array<SSL_CREDENTIAL *> creds;
-  if (!ssl_get_credential_list(hs, &creds)) {
-    return false;
-  }
-
-  if (std::none_of(creds.begin(), creds.end(), [](SSL_CREDENTIAL *cred) {
+  const auto &creds = hs->config->cert->credentials;
+  if (std::none_of(creds.begin(), creds.end(), [](const auto &cred) {
         return cred->type == SSLCredentialType::kSPAKE2PlusV1Client;
       })) {
     // If there were no configured PAKE credentials, proceed without filling
@@ -2898,7 +2894,7 @@ bool ssl_setup_pake_shares(SSL_HANDSHAKE *hs) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_UNSUPPORTED_CREDENTIAL_LIST);
     return false;
   }
-  SSL_CREDENTIAL *cred = creds[0];
+  SSL_CREDENTIAL *cred = creds[0].get();
   assert(cred->type == SSLCredentialType::kSPAKE2PlusV1Client);
 
   hs->pake_prover = MakeUnique<spake2plus::Prover>();
